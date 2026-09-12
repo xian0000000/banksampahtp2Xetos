@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Resik For Schooling — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div class="auth-shell" id="authShell">
+  <div class="auth-card">
+    <div class="brand-mark auth-brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
+        <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+        <path d="M9 12v5M15 12v5"/>
+      </svg>
+    </div>
+    <h1 class="auth-title">Resik For Schooling</h1>
+    <p class="auth-subtitle">Masuk ke panel admin pakai akun Google yang terdaftar.</p>
+
+    <button type="button" class="auth-btn auth-btn-google" id="authGoogleBtn">
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.92c1.7-1.57 2.68-3.88 2.68-6.64z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.92-2.27c-.81.54-1.85.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33C2.44 15.98 5.48 18 9 18z"/>
+        <path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l3.01-2.33z"/>
+        <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+      </svg>
+      Login dengan Google
+    </button>
+    <p class="auth-note" id="authNote"></p>
+
+    <div class="auth-sent-box hidden" id="authCheckingBox">
+      <p>Memeriksa akun…</p>
+    </div>
+  </div>
+</div>
+
+<div class="app-shell hidden" id="appShell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
+          <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+          <path d="M9 12v5M15 12v5"/>
+        </svg>
+      </div>
+      <div class="brand-name">Resik<span>For Schooling</span></div>
+    </div>
+
+    <nav class="nav-group" id="navGroup">
+      <button class="nav-item is-active" data-view="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="12" width="8" height="9" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" data-view="nasabah">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+        Nasabah
+      </button>
+      <button class="nav-item" data-view="kategori">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+        Kategori
+      </button>
+      <button class="nav-item" data-view="transaksi">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
+        Transaksi
+      </button>
+      <button class="nav-item" data-view="stok">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg>
+        Stok Sampah
+      </button>
+      <button class="nav-item" data-view="keuangan">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M8 15h.01"/></svg>
+        Keuangan
+      </button>
+      <button class="nav-item" data-view="raport">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg>
+        Raport
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="footer-card">
+        <div class="footer-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9Z"/></svg>
+        </div>
+        <div class="footer-card-text">
+          Selamat datang,<br/><strong>Admin Sekolah</strong>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <!-- DASHBOARD VIEW -->
+    <section class="view is-active" id="view-dashboard">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Ringkasan</div>
+          <div class="main-subtitle">Aktivitas bank sampah hari ini</div>
+        </div>
+        <div class="search-field">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="dashboardSearch" placeholder="Cari nama nasabah..." />
+        </div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-icon is-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Total Nasabah</p>
+            <p class="stat-value" id="statTotalNasabah">–</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon is-gold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Kategori Sampah</p>
+            <p class="stat-value" id="statTotalKategori">–</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon is-teal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 22v-6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Transaksi Hari Ini</p>
+            <p class="stat-value" id="statTxHariIni">–</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-row">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">Nasabah per Kelas</span>
+          </div>
+          <div class="donut-wrap">
+            <div class="donut-figure" id="donutFigure"></div>
+            <div class="legend" id="donutLegend"></div>
+          </div>
+        </div>
+
+        <div class="panel-dark">
+          <div>
+            <p class="panel-dark-label">Kategori Aktif</p>
+            <p class="panel-dark-value" id="darkTotalKategori">–</p>
+          </div>
+          <div class="panel-dark-divider"></div>
+          <div class="panel-dark-row">
+            <div>
+              <p class="panel-dark-label">Sampah Masuk (7 hari)</p>
+              <p class="panel-dark-value" id="darkWasteIn">– kg</p>
+            </div>
+            <div class="mini-bars" id="darkMiniBars"></div>
+          </div>
+          <div class="panel-dark-divider"></div>
+          <div>
+            <p class="panel-dark-label">Saldo Ditarik (7 hari)</p>
+            <p class="panel-dark-value" id="darkWasteOut">–</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="chart-panel-head">
+          <span class="panel-title">Setor &amp; Tarik — 7 Hari Terakhir</span>
+          <div class="chart-legend">
+            <span><i style="background:#1E7A4C"></i>Setor</span>
+            <span><i style="background:#D65D4E"></i>Tarik</span>
+          </div>
+        </div>
+        <svg class="chart-figure" id="lineChart" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+
+    <!-- NASABAH VIEW -->
+    <section class="view" id="view-nasabah">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Nasabah</div>
+          <div class="main-subtitle">Siswa, guru &amp; staff, atau masyarakat umum yang terdaftar</div>
+        </div>
+      </div>
+
+      <div class="tx-layout" style="margin-bottom:14px">
+        <div class="panel">
+          <p class="field-label">Tambah Nasabah Baru</p>
+          <div class="field-row">
+            <div>
+              <label class="field-label" for="nasabahNama">Nama</label>
+              <input type="text" id="nasabahNama" class="text-input" placeholder="Nama lengkap" />
+            </div>
+            <div>
+              <label class="field-label" for="nasabahTipe">Tipe Nasabah</label>
+              <select id="nasabahTipe" class="select-input">
+                <option value="Siswa">Siswa</option>
+                <option value="Guru & Staff">Guru &amp; Staff</option>
+                <option value="Umum">Masyarakat Umum</option>
+              </select>
+            </div>
+          </div>
+          <label class="field-label" id="nasabahKelasLabel" for="nasabahKelas">Kelas</label>
+          <input type="text" id="nasabahKelas" class="text-input" placeholder="Misal: 7A" style="margin-bottom:14px" />
+          <label class="field-label" for="nasabahEmail">Email Google (buat login app mobile)</label>
+          <input type="email" id="nasabahEmail" class="text-input" placeholder="nama@gmail.com" style="margin-bottom:14px" />
+          <button id="btnTambahNasabah" class="btn btn-primary">Tambah Nasabah</button>
+          <p class="empty-note" id="nasabahAddError"></p>
+        </div>
+
+        <div class="panel" id="nasabahResultPanel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px">
+          <p class="empty-note" id="nasabahResultEmpty">Kartu QR nasabah baru akan muncul di sini setelah ditambahkan — tunjukkan/print QR ini untuk dipakai nasabah saat setor sampah.</p>
+          <div id="nasabahResultCard" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <p class="name" id="nasabahResultNama" style="font-weight:700;font-size:14.5px"></p>
+            <div id="nasabahResultQr"></div>
+            <p class="tx-sub">UID: <span id="nasabahResultUid" style="font-family:var(--font-mono)"></span></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <table class="data-table">
+          <thead>
+            <tr><th>Nama</th><th>Tipe</th><th>Kelas / Unit</th><th>Email Login</th><th>UID</th><th>Saldo</th></tr>
+          </thead>
+          <tbody id="tableNasabah">
+            <tr class="loading-row"><td colspan="5">Memuat data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- KATEGORI VIEW -->
+    <section class="view" id="view-kategori">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Kategori Sampah</div>
+          <div class="main-subtitle">Harga beli per kilogram — ubah harga atau tambah kategori baru</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <p class="field-label">Tambah Kategori Baru</p>
+        <div class="search-row">
+          <input type="text" id="kategoriNamaBaru" class="text-input" placeholder="Nama kategori, misal: Kaca" />
+          <input type="number" id="kategoriHargaBaru" class="text-input" placeholder="Harga per kg, misal: 1500" style="max-width:180px" />
+          <button id="btnTambahKategori" class="btn btn-primary" style="width:auto">Tambah</button>
+        </div>
+        <p class="empty-note" id="kategoriAddError"></p>
+      </div>
+
+      <div class="panel">
+        <table class="data-table">
+          <thead>
+            <tr><th>Kategori</th><th>Harga / Kg</th><th>Total Disetor (7 hari)</th><th></th></tr>
+          </thead>
+          <tbody id="tableKategori"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TRANSAKSI VIEW -->
+    <section class="view" id="view-transaksi">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Proses Transaksi</div>
+          <div class="main-subtitle">Scan QR nasabah atau cari secara manual</div>
+        </div>
+      </div>
+
+      <div class="tx-layout">
+        <div class="panel">
+          <p class="field-label">1. Cari Nasabah</p>
+          <div class="search-row">
+            <input type="text" id="inputId" class="text-input" placeholder="Ketik UID nasabah..." />
+            <button id="btnCari" class="btn btn-secondary">Cari</button>
+          </div>
+
+          <p class="field-label" style="margin-top:16px">Atau scan QR nasabah untuk:</p>
+          <div class="scan-toggle" id="scanToggle">
+            <button type="button" class="scan-toggle-btn is-active" data-jenis="Setor">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              Setor Sampah
+            </button>
+            <button type="button" class="scan-toggle-btn" data-jenis="Tarik">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              Tarik Saldo
+            </button>
+          </div>
+          <button id="btnScan" class="btn btn-secondary btn-scan-wide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3M7 12h10"/></svg>
+            Mulai Scan QR
+          </button>
+          <div id="reader" class="is-hidden"></div>
+
+          <div id="profilNasabah" class="nasabah-found is-hidden">
+            <p class="name" id="txtNama">–</p>
+            <p class="stat-label" style="margin:0">Saldo saat ini</p>
+            <p class="balance" id="txtSaldo">Rp 0</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <p class="field-label">2. Detail Transaksi</p>
+          <div id="formTransaksi" class="hidden">
+            <div class="field-row">
+              <div>
+                <label class="field-label" for="jenisTx">Jenis Transaksi</label>
+                <select id="jenisTx" class="select-input">
+                  <option value="Setor">Setor Sampah</option>
+                  <option value="Tarik">Tarik Saldo</option>
+                </select>
+              </div>
+              <div id="wrapperSampah">
+                <label class="field-label" for="kategori">Kategori</label>
+                <select id="kategori" class="select-input">
+                  <option value="">Memuat kategori…</option>
+                </select>
+              </div>
+            </div>
+
+            <label class="field-label" id="labelInput" for="inputJumlah">Berat (Kg)</label>
+            <input type="number" id="inputJumlah" class="text-input" placeholder="Misal: 2" style="margin-bottom:14px" />
+
+            <div class="total-row">
+              <span class="stat-label" style="margin:0">Total Transaksi</span>
+              <span class="amount" id="txtTotal">Rp 0</span>
+            </div>
+
+            <button id="btnProses" class="btn btn-primary">Simpan Transaksi</button>
+          </div>
+          <p class="empty-note" id="txEmptyNote">Cari nasabah dulu untuk memproses transaksi.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- STOK VIEW -->
+    <section class="view" id="view-stok">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Stok Sampah</div>
+          <div class="main-subtitle">Total berat terkumpul per kategori</div>
+        </div>
+      </div>
+      <div class="panel">
+        <table class="data-table">
+          <thead>
+            <tr><th>Kategori</th><th>Total Terkumpul</th><th>Estimasi Nilai</th></tr>
+          </thead>
+          <tbody id="tableStok"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- KEUANGAN VIEW -->
+    <section class="view" id="view-keuangan">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Keuangan</div>
+          <div class="main-subtitle">Ringkasan saldo bank sampah</div>
+        </div>
+      </div>
+      <div class="summary-grid">
+        <div class="stat-card">
+          <div class="stat-icon is-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Total Saldo Aktif</p>
+            <p class="stat-value" id="keuanganSaldoAktif">–</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon is-teal">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Total Setor (7 hari)</p>
+            <p class="stat-value" id="keuanganMasuk">–</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon is-gold">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Total Tarik (7 hari)</p>
+            <p class="stat-value" id="keuanganKeluar">–</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Transaksi Terbaru</span></div>
+        <div class="tx-list" id="keuanganTxList"></div>
+      </div>
+    </section>
+
+    <!-- RAPORT VIEW -->
+    <section class="view" id="view-raport">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Raport</div>
+          <div class="main-subtitle">Ringkasan performa bank sampah sekolah</div>
+        </div>
+      </div>
+      <div class="panel">
+        <table class="data-table">
+          <thead>
+            <tr><th>Indikator</th><th>Nilai</th></tr>
+          </thead>
+          <tbody id="tableRaport"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ RIGHT SIDE PANEL ============ -->
+  <aside class="side-panel">
+    <div class="side-topbar">
+      <button class="icon-btn" aria-label="Notifikasi">
+        <span class="dot"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      </button>
+      <div class="admin-chip">
+        <div class="avatar">AS</div>
+        <div>
+          <strong>Admin Sekolah</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="balance-card">
+      <div class="balance-top">
+        Saldo Bank Sampah
+        <span class="balance-toggle"></span>
+      </div>
+      <p class="balance-label">Total saldo aktif nasabah</p>
+      <p class="balance-value" id="balanceValue">Rp 0</p>
+    </div>
+
+    <div class="panel-head" style="margin-top:4px">
+      <span class="panel-title">Transaksi Terakhir</span>
+    </div>
+    <div class="tx-list" id="lastTxList">
+      <p class="empty-note">Memuat transaksi…</p>
+    </div>
+  </aside>
+
+</div>
+
+<script src="https://unpkg.com/html5-qrcode" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
