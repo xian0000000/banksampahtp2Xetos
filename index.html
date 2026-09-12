@@ -43,6 +43,25 @@
 
 <div class="app-shell hidden" id="appShell">
 
+  <!-- ============ MOBILE TOPBAR (tampil di layar sempit) ============ -->
+  <div class="mobile-topbar">
+    <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Buka menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
+          <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+          <path d="M9 12v5M15 12v5"/>
+        </svg>
+      </div>
+      <div class="brand-name">Resik<span>For Schooling</span></div>
+    </div>
+  </div>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar">
     <div class="brand">
@@ -148,7 +167,7 @@
       <div class="grid-row">
         <div class="panel">
           <div class="panel-head">
-            <span class="panel-title">Nasabah per Kelas</span>
+            <span class="panel-title">Akumulasi Setoran per Kategori</span>
           </div>
           <div class="donut-wrap">
             <div class="donut-figure" id="donutFigure"></div>
@@ -164,14 +183,14 @@
           <div class="panel-dark-divider"></div>
           <div class="panel-dark-row">
             <div>
-              <p class="panel-dark-label">Sampah Masuk (7 hari)</p>
+              <p class="panel-dark-label">Sampah Masuk (30 hari)</p>
               <p class="panel-dark-value" id="darkWasteIn">– kg</p>
             </div>
             <div class="mini-bars" id="darkMiniBars"></div>
           </div>
           <div class="panel-dark-divider"></div>
           <div>
-            <p class="panel-dark-label">Saldo Ditarik (7 hari)</p>
+            <p class="panel-dark-label">Saldo Ditarik (30 hari)</p>
             <p class="panel-dark-value" id="darkWasteOut">–</p>
           </div>
         </div>
@@ -179,13 +198,12 @@
 
       <div class="panel">
         <div class="chart-panel-head">
-          <span class="panel-title">Setor &amp; Tarik — 7 Hari Terakhir</span>
+          <span class="panel-title">Arus Transaksi — 30 Hari Terakhir</span>
           <div class="chart-legend">
-            <span><i style="background:#1E7A4C"></i>Setor</span>
-            <span><i style="background:#D65D4E"></i>Tarik</span>
+            <span><i style="background:#1E7A4C"></i>Masuk</span><span><i style="background:#12A883"></i>Narik</span>
           </div>
         </div>
-        <svg class="chart-figure" id="lineChart" viewBox="0 0 640 190" preserveAspectRatio="none"></svg>
+        <svg class="chart-figure" id="lineChart" viewBox="0 0 640 300" preserveAspectRatio="xMidYMid meet"></svg>
       </div>
     </section>
 
@@ -234,14 +252,16 @@
       </div>
 
       <div class="panel">
-        <table class="data-table">
-          <thead>
-            <tr><th>Nama</th><th>Tipe</th><th>Kelas / Unit</th><th>Email Login</th><th>UID</th><th>Saldo</th></tr>
-          </thead>
-          <tbody id="tableNasabah">
-            <tr class="loading-row"><td colspan="5">Memuat data…</td></tr>
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Nama</th><th>Tipe</th><th>Kelas / Unit</th><th>Email Login</th><th>UID</th><th>Saldo</th><th>Aksi</th></tr>
+            </thead>
+            <tbody id="tableNasabah">
+              <tr class="loading-row"><td colspan="5">Memuat data…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -265,12 +285,14 @@
       </div>
 
       <div class="panel">
-        <table class="data-table">
-          <thead>
-            <tr><th>Kategori</th><th>Harga / Kg</th><th>Total Disetor (7 hari)</th><th></th></tr>
-          </thead>
-          <tbody id="tableKategori"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Kategori</th><th>Harga / Kg</th><th>Total Disetor (30 hari)</th><th></th></tr>
+            </thead>
+            <tbody id="tableKategori"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -326,16 +348,19 @@
                   <option value="Tarik">Tarik Saldo</option>
                 </select>
               </div>
-              <div id="wrapperSampah">
-                <label class="field-label" for="kategori">Kategori</label>
-                <select id="kategori" class="select-input">
-                  <option value="">Memuat kategori…</option>
-                </select>
-              </div>
             </div>
 
-            <label class="field-label" id="labelInput" for="inputJumlah">Berat (Kg)</label>
-            <input type="number" id="inputJumlah" class="text-input" placeholder="Misal: 2" style="margin-bottom:14px" />
+            <div id="wrapperSampah">
+              <div class="section-row">
+                <label class="field-label" style="margin:0">Sampah yang disetor</label>
+                <button type="button" id="btnTambahJenisSampah" class="link-btn">+ Tambah kategori</button>
+              </div>
+              <div id="setorItems" class="multi-items"></div>
+              <p class="empty-note" style="margin-top:6px">Satu penyetoran bisa berisi banyak kategori, misalnya Plastik 2 kg + Kertas 1 kg.</p>
+            </div>
+
+            <label class="field-label" id="labelInput" for="inputJumlah" style="display:none">Nominal Penarikan (Rp)</label>
+            <input type="number" id="inputJumlah" class="text-input" placeholder="Misal: 10000" style="margin-bottom:14px;display:none" />
 
             <div class="total-row">
               <span class="stat-label" style="margin:0">Total Transaksi</span>
@@ -357,13 +382,44 @@
           <div class="main-subtitle">Total berat terkumpul per kategori</div>
         </div>
       </div>
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <span class="panel-title">Pengeluaran Sampah</span>
+          <span class="stat-label" style="margin:0">Catat sampah yang sudah ditimbang dan dikeluarkan ke pengepul/pihak lain</span>
+        </div>
+        <div class="field-row">
+          <div>
+            <label class="field-label" for="wasteOutDate">Tanggal</label>
+            <input type="date" id="wasteOutDate" class="text-input" />
+          </div>
+          <div>
+            <label class="field-label" for="wasteOutReceiver">Pengepul / Penerima</label>
+            <input type="text" id="wasteOutReceiver" class="text-input" placeholder="Contoh: Pak Budi / Pengepul A" />
+          </div>
+        </div>
+        <div class="section-row" style="margin-top:14px">
+          <label class="field-label" style="margin:0">Sampah yang dikeluarkan</label>
+          <button type="button" id="btnTambahWasteOut" class="link-btn">+ Tambah kategori</button>
+        </div>
+        <div id="wasteOutItems" class="multi-items"></div>
+        <label class="field-label" for="wasteOutNote" style="margin-top:14px">Catatan</label>
+        <textarea id="wasteOutNote" class="text-input" rows="3" placeholder="Contoh: Penimbangan dilakukan di gudang pengepul."></textarea>
+        <div class="total-row" style="margin-top:14px">
+          <span class="stat-label" style="margin:0">Total sampah keluar</span>
+          <span class="amount" id="wasteOutTotal">0 kg</span>
+        </div>
+        <button id="btnSimpanWasteOut" class="btn btn-primary" style="margin-top:14px">Simpan Pengeluaran Sampah</button>
+      </div>
+
       <div class="panel">
-        <table class="data-table">
-          <thead>
-            <tr><th>Kategori</th><th>Total Terkumpul</th><th>Estimasi Nilai</th></tr>
-          </thead>
-          <tbody id="tableStok"></tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Kategori</th><th>Total Terkumpul</th><th>Estimasi Nilai</th></tr>
+            </thead>
+            <tbody id="tableStok"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -390,7 +446,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>
           </div>
           <div>
-            <p class="stat-label">Total Setor (7 hari)</p>
+            <p class="stat-label">Total Setor (30 hari)</p>
             <p class="stat-value" id="keuanganMasuk">–</p>
           </div>
         </div>
@@ -399,7 +455,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
           </div>
           <div>
-            <p class="stat-label">Total Tarik (7 hari)</p>
+            <p class="stat-label">Total Tarik (30 hari)</p>
             <p class="stat-value" id="keuanganKeluar">–</p>
           </div>
         </div>
@@ -418,13 +474,43 @@
           <div class="main-subtitle">Ringkasan performa bank sampah sekolah</div>
         </div>
       </div>
+      <div class="panel report-toolbar">
+        <div>
+          <p class="field-label">Periode Rekapan</p>
+          <p class="empty-note" style="margin:0">Pilih bulan untuk melihat analisis lengkap dan mengunduh PDF.</p>
+        </div>
+        <div class="report-actions">
+          <input type="month" id="reportMonth" class="text-input" />
+          <button id="btnDownloadReport" class="btn btn-primary">Download PDF</button>
+        </div>
+      </div>
+
+      <div class="report-stats" id="monthlyReportStats"></div>
+
       <div class="panel">
-        <table class="data-table">
-          <thead>
-            <tr><th>Indikator</th><th>Nilai</th></tr>
-          </thead>
-          <tbody id="tableRaport"></tbody>
-        </table>
+        <div class="panel-head"><span class="panel-title">Analisis Bulanan</span></div>
+        <p class="report-analysis" id="monthlyAnalysis">Memuat analisis…</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Rekap Kategori</span></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Kategori</th><th>Total</th></tr></thead>
+            <tbody id="monthlyCategoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Indikator 30 Hari Terakhir</th><th>Nilai</th></tr>
+            </thead>
+            <tbody id="tableRaport"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -454,11 +540,13 @@
       <p class="balance-value" id="balanceValue">Rp 0</p>
     </div>
 
-    <div class="panel-head" style="margin-top:4px">
-      <span class="panel-title">Transaksi Terakhir</span>
-    </div>
-    <div class="tx-list" id="lastTxList">
-      <p class="empty-note">Memuat transaksi…</p>
+    <div class="side-tx-block">
+      <div class="panel-head" style="margin-top:4px">
+        <span class="panel-title">Transaksi Terakhir</span>
+      </div>
+      <div class="tx-list" id="lastTxList">
+        <p class="empty-note">Memuat transaksi…</p>
+      </div>
     </div>
   </aside>
 
@@ -466,6 +554,7 @@
 
 <script src="https://unpkg.com/html5-qrcode" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

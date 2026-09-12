@@ -13,6 +13,7 @@ import {
   update,
   push,
   set,
+  remove,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
 
 import {
@@ -86,7 +87,7 @@ authGoogleBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error(err);
     if (err.code !== "auth/popup-closed-by-user") {
-      setAuthNote("Gagal login dengan Google. Coba lagi.");
+      setAuthNote(`Gagal login Google (${err.code || "unknown"}). Cek Google Sign-In/Firebase Auth.`);
     }
   } finally {
     authGoogleBtn.disabled = false;
@@ -185,10 +186,10 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function last7Days() {
+function last30Days() {
   const days = [];
 
-  for (let i = 6; i >= 0; i -= 1) {
+  for (let i = 29; i >= 0; i -= 1) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     days.push(d);
@@ -197,7 +198,6 @@ function last7Days() {
   return days;
 }
 
-const DAY_LABEL = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
 // ============================================================================
 // Data layer
@@ -213,6 +213,18 @@ async function fetchAllTransactions() {
   const snap = await get(child(ref(db), "transactions"));
 
   return snap.exists() ? snap.val() : {};
+}
+
+async function fetchAllWasteOut() {
+  try {
+    const snap = await get(child(ref(db), "waste_out"));
+    return snap.exists() ? snap.val() : {};
+  } catch (err) {
+    // Node waste_out bisa belum punya permission di Firebase Rules.
+    // Jangan biarkan kegagalan node opsional ini membuat seluruh dashboard kosong.
+    console.warn("Pengeluaran sampah belum bisa dibaca:", err);
+    return {};
+  }
 }
 
 async function fetchKategori() {
@@ -255,7 +267,7 @@ async function fetchKategori() {
 // Flatten transaksi
 // ============================================================================
 
-function flattenTransactions(users, transactionsByUser) {
+function flattenTransactions(users, transactionsByUser, wasteOut = {}) {
   const flat = [];
 
   Object.entries(transactionsByUser || {}).forEach(([uid, txMap]) => {
@@ -270,6 +282,17 @@ function flattenTransactions(users, transactionsByUser) {
     });
   });
 
+  Object.entries(wasteOut || {}).forEach(([txId, tx]) => {
+    flat.push({
+      ...tx,
+      uid: null,
+      txId,
+      isWasteOut: true,
+      nama: tx.pengepul || tx.penerima || "Pengeluaran Sampah",
+      kelas: "-",
+    });
+  });
+
   flat.sort(
     (a, b) => new Date(b.tanggal) - new Date(a.tanggal),
   );
@@ -278,23 +301,69 @@ function flattenTransactions(users, transactionsByUser) {
 }
 
 // ============================================================================
+// Helpers transaksi setor multi-kategori
+// ============================================================================
+
+function getSetorItems(tx) {
+  if (tx?.tipe !== "Setor") return [];
+  if (Array.isArray(tx.items) && tx.items.length) return tx.items;
+  if (tx?.kategori) {
+    return [{
+      kategori: tx.kategori,
+      berat_kg: Number(tx.berat_kg) || 0,
+      harga_per_kg: Number(tx.harga_per_kg) || hargaKategoriOf(tx.kategori),
+      total_rp: Number(tx.total_rp) || 0,
+    }];
+  }
+  return [];
+}
+
+function totalBeratTx(tx) {
+  return getSetorItems(tx).reduce((sum, item) => sum + (Number(item.berat_kg) || 0), 0);
+}
+
+function totalNilaiItems(items) {
+  return items.reduce((sum, item) => sum + ((Number(item.berat_kg) || 0) * (Number(item.harga_per_kg) || hargaKategoriOf(item.kategori))), 0);
+}
+
+function getWasteOutItems(tx) {
+  if (!tx?.isWasteOut && tx?.tipe !== "Pengeluaran Sampah") return [];
+  if (Array.isArray(tx.items) && tx.items.length) return tx.items;
+  if (tx?.kategori) {
+    return [{ kategori: tx.kategori, berat_kg: Number(tx.berat_kg) || 0 }];
+  }
+  return [];
+}
+
+function totalBeratWasteOut(tx) {
+  return getWasteOutItems(tx).reduce((sum, item) => sum + (Number(item.berat_kg) || 0), 0);
+}
+
+// ============================================================================
 // Rendering: donut chart
 // ============================================================================
 
-function renderDonut(users) {
-  const counts = {};
+function renderSetoranDonut(flat) {
+  const totals = {};
+  const dayKeys = new Set(last30Days().map(isoDate));
 
-  Object.values(users).forEach((u) => {
-    const kelas = u.kelas || "Lainnya";
+  flat.filter((t) => dayKeys.has(t.tanggal?.slice(0, 10)))
+    .filter((t) => t.tipe === "Setor")
+    .forEach((t) => {
+      getSetorItems(t).forEach((item) => {
+        const kategori = item.kategori || "Lainnya";
+        const berat = Number(item.berat_kg) || 0;
+        totals[kategori] = (totals[kategori] || 0) + berat;
+      });
+    });
 
-    counts[kelas] = (counts[kelas] || 0) + 1;
-  });
-
-  const entries = Object.entries(counts)
+  const entries = Object.entries(totals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6);
 
-  const total =
+  // fraction tiap slice tetap dihitung dari total kg (bukan persentase
+  // hardcoded) — cuma label yang ditampilkan diganti ke kg, bukan %.
+  const totalKg =
     entries.reduce((sum, [, v]) => sum + v, 0) || 1;
 
   const size = 150;
@@ -306,7 +375,7 @@ function renderDonut(users) {
 
   const segments = entries
     .map(([, value], i) => {
-      const fraction = value / total;
+      const fraction = value / totalKg;
       const dash = fraction * circumference;
 
       const circle = `
@@ -340,126 +409,101 @@ function renderDonut(users) {
     </svg>
 
     <div class="donut-center">
-      <strong>${Object.keys(users).length}</strong>
-      <span>Nasabah</span>
+      <strong>${formatKg(totalKg)}</strong>
+      <span>Total Setoran</span>
     </div>
   `;
 
   document.getElementById("donutLegend").innerHTML =
     entries
       .map(
-        ([kelas, value], i) => `
+        ([kategori, value], i) => `
           <div class="legend-item">
             <span
               class="legend-dot"
               style="background:${DONUT_COLORS[i % DONUT_COLORS.length]}"
             ></span>
 
-            <span>${kelas}</span>
+            <span>${kategori}</span>
 
-            <span>${value}</span>
+            <span>${formatKg(value)}</span>
           </div>
         `,
       )
       .join("") ||
-    '<p class="empty-note">Belum ada data nasabah.</p>';
+    '<p class="empty-note">Belum ada data setoran.</p>';
 }
 
 // ============================================================================
 // Rendering: line chart
 // ============================================================================
 
-function renderLineChart(days, setorCounts, tarikCounts) {
+function renderAccumulationChart(days, masukRp, tarikRp) {
   const w = 640;
-  const h = 190;
-
-  const padL = 26;
-  const padB = 22;
-  const padT = 14;
-
-  const plotW = w - padL - 10;
+  const h = 300;
+  const padL = 52;
+  const padR = 16;
+  const padT = 22;
+  const padB = 30;
+  const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  const maxVal = Math.max(
-    1,
-    ...setorCounts,
-    ...tarikCounts,
-  );
+  const rawMax = Math.max(1, ...masukRp, ...tarikRp);
+  const maxVal = Math.ceil((rawMax * 1.15) / 10000) * 10000 || 10000;
+  const stepX = plotW / (days.length - 1 || 1);
 
-  const stepX =
-    plotW / (days.length - 1 || 1);
+  const makePoints = (values) => values.map((v, i) => ({
+    x: padL + i * stepX,
+    y: padT + plotH - (v / maxVal) * plotH,
+    v,
+  }));
 
-  const toPoints = (values) =>
-    values
-      .map((v, i) => {
-        const x = padL + i * stepX;
+  const masukPoints = makePoints(masukRp);
+  const tarikPoints = makePoints(tarikRp);
 
-        const y =
-          padT +
-          plotH -
-          (v / maxVal) * plotH;
+  const gridSteps = [0, 0.25, 0.5, 0.75, 1];
+  const gridLines = gridSteps.map((f) => {
+    const y = padT + plotH * f;
+    const label = formatRp(maxVal * (1 - f));
+    return `
+      <line x1="${padL}" y1="${y.toFixed(2)}" x2="${w - padR}" y2="${y.toFixed(2)}"
+        stroke="#D8E1DC" stroke-width="1" />
+      <text x="0" y="${(y + 3.5).toFixed(2)}" font-size="9.5" fill="#7C8982">${label}</text>
+    `;
+  }).join("");
 
-        return `${x},${y}`;
-      })
-      .join(" ");
+  const labelEvery = Math.ceil(days.length / 6);
+  const dayLabels = days.map((d, i) => {
+    if (i % labelEvery !== 0 && i !== days.length - 1) return "";
+    const x = padL + i * stepX;
+    return `<text x="${x.toFixed(2)}" y="${h - 8}" text-anchor="middle" font-size="9.5" fill="#68766F">${d.getDate()}/${d.getMonth() + 1}</text>`;
+  }).join("");
 
-  const gridLines = [0, 0.5, 1]
-    .map((f) => {
-      const y = padT + plotH * f;
+  const linePath = (points) => points.map((p, i) =>
+    `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)},${p.y.toFixed(2)}`
+  ).join(" ");
 
-      return `
-        <line
-          x1="${padL}"
-          y1="${y}"
-          x2="${w - 10}"
-          y2="${y}"
-          stroke="#E3E9E2"
-          stroke-width="1"
-        />
-      `;
-    })
-    .join("");
+  const makeDots = (points, color) => points.map((p, i) => {
+    const last = i === points.length - 1;
+    return `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${last ? 4.5 : 2.7}"
+      fill="${last ? color : "#FFFFFF"}" stroke="${color}" stroke-width="${last ? 2.5 : 1.5}">
+      <title>${days[i].getDate()}/${days[i].getMonth() + 1}: ${formatRp(p.v)}</title>
+    </circle>`;
+  }).join("");
 
-  const dayLabels = days
-    .map((d, i) => {
-      const x = padL + i * stepX;
-
-      return `
-        <text
-          x="${x}"
-          y="${h - 4}"
-          text-anchor="middle"
-        >
-          ${DAY_LABEL[d.getDay()]}
-        </text>
-      `;
-    })
-    .join("");
-
-  const setorLine = toPoints(setorCounts);
-  const tarikLine = toPoints(tarikCounts);
+  const masukColor = "#1E7A4C";
+  const tarikColor = "#12A883";
 
   document.getElementById("lineChart").innerHTML = `
     ${gridLines}
 
-    <polyline
-      points="${setorLine}"
-      fill="none"
-      stroke="#1E7A4C"
-      stroke-width="2.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
+    <path d="${linePath(masukPoints)}" fill="none" stroke="${masukColor}"
+      stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="${linePath(tarikPoints)}" fill="none" stroke="${tarikColor}"
+      stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
 
-    <polyline
-      points="${tarikLine}"
-      fill="none"
-      stroke="#D65D4E"
-      stroke-width="2.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-
+    ${makeDots(masukPoints, masukColor)}
+    ${makeDots(tarikPoints, tarikColor)}
     ${dayLabels}
   `;
 }
@@ -485,10 +529,15 @@ function renderMiniBars(values) {
 
 function txRowHtml(tx) {
   const isSetor = tx.tipe === "Setor";
+  const isWasteOut = tx.isWasteOut || tx.tipe === "Pengeluaran Sampah";
 
+  const setorItems = isSetor ? getSetorItems(tx) : [];
+  const totalKg = isSetor ? totalBeratTx(tx) : isWasteOut ? totalBeratWasteOut(tx) : 0;
   const title = isSetor
-    ? `Setor ${tx.berat_kg ?? "-"} Kg ${tx.kategori ?? ""}`
-    : "Penarikan Saldo";
+    ? `Setor ${setorItems.length} kategori · ${totalKg.toLocaleString("id-ID", { maximumFractionDigits: 1 })} Kg`
+    : isWasteOut
+      ? `Pengeluaran Sampah · ${totalKg.toLocaleString("id-ID", { maximumFractionDigits: 1 })} Kg`
+      : "Penarikan Saldo";
 
   const date = tx.tanggal
     ? new Date(tx.tanggal)
@@ -537,7 +586,7 @@ function txRowHtml(tx) {
       </div>
 
       <span class="tx-amount ${isSetor ? "is-in" : "is-out"}">
-        ${isSetor ? "+" : "-"} ${formatRp(tx.total_rp)}
+        ${isSetor ? "+" : isWasteOut ? "" : "-"} ${isWasteOut ? formatKg(totalKg) : formatRp(tx.total_rp)}
       </span>
     </div>
   `;
@@ -563,29 +612,50 @@ async function loadDashboard() {
     users,
     transactionsByUser,
     kategori,
+    wasteOut,
   ] = await Promise.all([
     fetchAllUsers(),
     fetchAllTransactions(),
     fetchKategori(),
+    fetchAllWasteOut(),
   ]);
 
   const flat = flattenTransactions(
     users,
     transactionsByUser,
+    wasteOut,
   );
 
   cache = {
     users,
     transactions: transactionsByUser,
+    wasteOut,
     flat,
     kategori,
   };
 
   populateKategoriSelect();
+  initMonthlyReport();
 
-  const days = last7Days();
+  const days = last30Days();
   const dayKeys = days.map(isoDate);
   const todayKey = isoDate(new Date());
+
+  const days30 = last30Days();
+  const dayKeys30 = days30.map(isoDate);
+
+  // Arus uang 30 hari: dua garis — uang masuk dari setor dan uang keluar dari tarik.
+  const masukRp30 = dayKeys30.map((key) =>
+    flat
+      .filter((t) => t.tanggal?.slice(0, 10) === key && t.tipe === "Setor")
+      .reduce((sum, t) => sum + (Number(t.total_rp) || 0), 0),
+  );
+
+  const tarikRp30 = dayKeys30.map((key) =>
+    flat
+      .filter((t) => t.tanggal?.slice(0, 10) === key && t.tipe === "Tarik")
+      .reduce((sum, t) => sum + (Number(t.total_rp) || 0), 0),
+  );
 
   const setorCounts = dayKeys.map(
     (key) =>
@@ -596,36 +666,27 @@ async function loadDashboard() {
       ).length,
   );
 
-  const tarikCounts = dayKeys.map(
-    (key) =>
-      flat.filter(
-        (t) =>
-          t.tanggal?.slice(0, 10) === key &&
-          t.tipe === "Tarik",
-      ).length,
-  );
-
   const txHariIni = flat.filter(
     (t) =>
       t.tanggal?.slice(0, 10) === todayKey,
   ).length;
 
-  const last7 = flat.filter((t) =>
+  const last30 = flat.filter((t) =>
     dayKeys.includes(
       t.tanggal?.slice(0, 10),
     ),
   );
 
-  const wasteInKg = last7
+  const wasteInKg = last30
     .filter((t) => t.tipe === "Setor")
     .reduce(
       (sum, t) =>
         sum +
-        (parseFloat(t.berat_kg) || 0),
+        totalBeratTx(t),
       0,
     );
 
-  const saldoDitarik = last7
+  const saldoDitarik = last30
     .filter((t) => t.tipe === "Tarik")
     .reduce(
       (sum, t) =>
@@ -660,7 +721,7 @@ async function loadDashboard() {
 
   // Donut
 
-  renderDonut(users);
+  renderSetoranDonut(flat);
 
   // Dark panel
 
@@ -683,10 +744,10 @@ async function loadDashboard() {
 
   // Line chart
 
-  renderLineChart(
-    days,
-    setorCounts,
-    tarikCounts,
+  renderAccumulationChart(
+    days30,
+    masukRp30,
+    tarikRp30,
   );
 
   // Balance
@@ -751,12 +812,12 @@ function renderNasabahTable(users) {
               ${uid}
             </td>
 
-            <td
-              style="font-family:var(--font-mono)"
-            >
-              ${formatRp(
-                u.saldo_terakhir || 0,
-              )}
+            <td style="font-family:var(--font-mono)">
+              ${formatRp(u.saldo_terakhir || 0)}
+            </td>
+            <td class="table-actions">
+              <button class="link-btn" data-edit-user="${uid}">Edit</button>
+              <button class="link-btn is-danger" data-delete-user="${uid}">Hapus</button>
             </td>
           </tr>
         `,
@@ -764,7 +825,7 @@ function renderNasabahTable(users) {
       .join("") ||
     `
       <tr class="loading-row">
-        <td colspan="6">
+        <td colspan="7">
           Belum ada nasabah terdaftar.
         </td>
       </tr>
@@ -972,38 +1033,71 @@ document
   );
 
 // ============================================================================
+// Edit / hapus nasabah
+// ============================================================================
+
+document.getElementById("tableNasabah")?.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("[data-edit-user]");
+  const deleteBtn = e.target.closest("[data-delete-user]");
+  const uid = editBtn?.dataset.editUser || deleteBtn?.dataset.deleteUser;
+  if (!uid || !cache.users[uid]) return;
+  const user = cache.users[uid];
+
+  if (editBtn) {
+    const nama = prompt("Nama nasabah:", user.nama || "");
+    if (nama === null) return;
+    const tipe = prompt("Tipe (Siswa / Guru & Staff / Umum):", user.tipe || "Siswa");
+    if (tipe === null) return;
+    const kelas = prompt("Kelas / Unit / Keterangan:", user.kelas || "-");
+    if (kelas === null) return;
+    const email = prompt("Email Google (kosongkan jika tidak ada):", user.email || "");
+    if (email === null) return;
+    if (!nama.trim()) { alert("Nama wajib diisi."); return; }
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail && cleanEmail !== (user.email || "").toLowerCase()) {
+      const exists = await get(child(ref(db), `email_to_uid/${sanitizeEmailKey(cleanEmail)}`));
+      if (exists.exists() && exists.val() !== uid) { alert("Email sudah dipakai nasabah lain."); return; }
+    }
+    const updates = {};
+    updates[`users/${uid}/nama`] = nama.trim();
+    updates[`users/${uid}/tipe`] = tipe.trim() || "Siswa";
+    updates[`users/${uid}/kelas`] = kelas.trim() || "-";
+    updates[`users/${uid}/email`] = cleanEmail || null;
+    if (user.email && user.email.toLowerCase() !== cleanEmail) {
+      updates[`email_to_uid/${sanitizeEmailKey(user.email)}`] = null;
+    }
+    if (cleanEmail) updates[`email_to_uid/${sanitizeEmailKey(cleanEmail)}`] = uid;
+    try {
+      await update(ref(db), updates);
+      await loadDashboard();
+      renderNasabahTable(cache.users);
+    } catch (err) { console.error(err); alert("Gagal mengedit nasabah."); }
+    return;
+  }
+
+  if (deleteBtn) {
+    if (!confirm(`Hapus nasabah "${user.nama}" beserta seluruh riwayat transaksinya?`)) return;
+    const updates = { [`users/${uid}`]: null, [`transactions/${uid}`]: null };
+    if (user.email) updates[`email_to_uid/${sanitizeEmailKey(user.email)}`] = null;
+    try {
+      await update(ref(db), updates);
+      await loadDashboard();
+      renderNasabahTable(cache.users);
+    } catch (err) { console.error(err); alert("Gagal menghapus nasabah."); }
+  }
+});
+
+// ============================================================================
 // Dropdown kategori transaksi
 // ============================================================================
 
 function populateKategoriSelect() {
-  const select =
-    document.getElementById(
-      "kategori",
-    );
-
-  const current =
-    select.value;
-
-  select.innerHTML =
-    cache.kategori
-      .map(
-        (k) =>
-          `<option value="${k.nama}">
-            ${k.nama} — ${formatRp(
-              k.harga,
-            )}/kg
-          </option>`,
-      )
-      .join("") ||
-    '<option value="">Belum ada kategori</option>';
-
-  if (
-    cache.kategori.some(
-      (k) =>
-        k.nama === current,
-    )
-  ) {
-    select.value = current;
+  if (typeof setorItemsEl !== "undefined" && setorItemsEl) {
+    resetSetorItems();
+  }
+  if (typeof wasteOutItemsEl !== "undefined" && wasteOutItemsEl) {
+    resetWasteOutItems();
+    kalkulasiWasteOut();
   }
 }
 
@@ -1013,9 +1107,9 @@ function populateKategoriSelect() {
 
 function renderKategoriTable(flat) {
   const dayKeys =
-    last7Days().map(isoDate);
+    last30Days().map(isoDate);
 
-  const last7 = flat.filter(
+  const last30 = flat.filter(
     (t) =>
       dayKeys.includes(
         t.tanggal?.slice(0, 10),
@@ -1028,21 +1122,11 @@ function renderKategoriTable(flat) {
   ).innerHTML =
     cache.kategori
       .map((k) => {
-        const totalKg =
-          last7
-            .filter(
-              (t) =>
-                t.kategori ===
-                k.nama,
-            )
-            .reduce(
-              (sum, t) =>
-                sum +
-                (parseFloat(
-                  t.berat_kg,
-                ) || 0),
-              0,
-            );
+        const totalKg = last30.reduce((sum, t) => {
+          return sum + getSetorItems(t)
+            .filter((item) => item.kategori === k.nama)
+            .reduce((sub, item) => sub + (Number(item.berat_kg) || 0), 0);
+        }, 0);
 
         const warna =
           warnaKategori(k.nama);
@@ -1050,32 +1134,12 @@ function renderKategoriTable(flat) {
         return `
           <tr>
             <td>
-              <span
-                class="pill"
-                style="
-                  background:${warna}1A;
-                  color:${warna}
-                "
-              >
-                ${k.nama}
-              </span>
+              <input type="text" class="kategori-nama-input text-input" data-key="${k.key}" value="${k.nama}" />
             </td>
-
             <td>
               <div class="price-edit-row">
-                <input
-                  type="number"
-                  class="kategori-harga-input"
-                  data-key="${k.key}"
-                  value="${k.harga}"
-                />
-
-                <button
-                  class="link-btn"
-                  data-save-kategori="${k.key}"
-                >
-                  Simpan
-                </button>
+                <input type="number" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
+                <button class="link-btn" data-save-kategori="${k.key}">Simpan</button>
               </div>
             </td>
 
@@ -1083,7 +1147,9 @@ function renderKategoriTable(flat) {
               ${formatKg(totalKg)}
             </td>
 
-            <td></td>
+            <td class="table-actions">
+              <button class="link-btn is-danger" data-delete-kategori="${k.key}">Hapus</button>
+            </td>
           </tr>
         `;
       })
@@ -1120,14 +1186,36 @@ async function tambahKategori(
   );
 }
 
-async function simpanHargaKategori(
-  key,
-  harga,
-) {
-  await update(ref(db), {
-    [`kategori/${key}/harga`]:
-      harga,
-  });
+async function simpanKategori(key, nama, harga) {
+  const old = cache.kategori.find((k) => k.key === key);
+  const updates = {
+    [`kategori/${key}/nama`]: nama,
+    [`kategori/${key}/harga`]: harga,
+  };
+
+  // Saat nama kategori diubah, ikut migrasikan nama kategori pada transaksi
+  // lama supaya riwayat dan analitik tetap nyambung ke kategori yang sama.
+  if (old && old.nama !== nama) {
+    cache.flat
+      .filter((tx) => tx.tipe === "Setor")
+      .forEach((tx) => {
+        if (Array.isArray(tx.items)) {
+          tx.items.forEach((item, index) => {
+            if (item.kategori === old.nama) {
+              updates[`transactions/${tx.uid}/${tx.txId}/items/${index}/kategori`] = nama;
+            }
+          });
+        } else if (tx.kategori === old.nama) {
+          updates[`transactions/${tx.uid}/${tx.txId}/kategori`] = nama;
+        }
+      });
+  }
+
+  await update(ref(db), updates);
+}
+
+async function hapusKategori(key) {
+  await remove(ref(db, `kategori/${key}`));
 }
 
 document
@@ -1226,96 +1314,78 @@ document
 
 document
   .getElementById("tableKategori")
-  .addEventListener(
-    "click",
-    async (e) => {
-      const btn =
-        e.target.closest(
-          "[data-save-kategori]",
-        );
+  .addEventListener("click", async (e) => {
+    const saveBtn = e.target.closest("[data-save-kategori]");
+    const deleteBtn = e.target.closest("[data-delete-kategori]");
 
-      if (!btn) return;
-
-      const key =
-        btn.dataset.saveKategori;
-
-      const input =
-        document.querySelector(
-          `.kategori-harga-input[data-key="${key}"]`,
-        );
-
-      if (!input) return;
-
-      const harga =
-        parseFloat(input.value);
-
-      if (
-        !Number.isFinite(harga) ||
-        harga <= 0
-      ) {
-        alert(
-          "Harga tidak valid.",
-        );
-
-        return;
-      }
-
-      btn.textContent = "…";
-
+    if (deleteBtn) {
+      const key = deleteBtn.dataset.deleteKategori;
+      const item = cache.kategori.find((k) => k.key === key);
+      if (!item) return;
+      if (!confirm(`Hapus kategori "${item.nama}"? Transaksi lama tetap tersimpan.`)) return;
       try {
-        await simpanHargaKategori(
-          key,
-          harga,
-        );
-
+        await hapusKategori(key);
         await loadDashboard();
-
-        renderKategoriTable(
-          cache.flat,
-        );
+        renderKategoriTable(cache.flat);
       } catch (err) {
         console.error(err);
-
-        alert(
-          "Gagal menyimpan harga kategori. Cek koneksi atau rules Firebase.",
-        );
-
-        btn.textContent =
-          "Simpan";
+        alert("Gagal menghapus kategori. Cek rules Firebase.");
       }
-    },
-  );
+      return;
+    }
+
+    if (!saveBtn) return;
+    const key = saveBtn.dataset.saveKategori;
+    const namaInput = document.querySelector(`.kategori-nama-input[data-key="${key}"]`);
+    const hargaInput = document.querySelector(`.kategori-harga-input[data-key="${key}"]`);
+    const nama = namaInput?.value.trim();
+    const harga = parseFloat(hargaInput?.value);
+    if (!nama || !Number.isFinite(harga) || harga <= 0) {
+      alert("Nama dan harga kategori harus valid.");
+      return;
+    }
+    const duplicate = cache.kategori.some((k) => k.key !== key && k.nama.toLowerCase() === nama.toLowerCase());
+    if (duplicate) {
+      alert("Nama kategori sudah dipakai.");
+      return;
+    }
+    saveBtn.textContent = "…";
+    try {
+      await simpanKategori(key, nama, harga);
+      await loadDashboard();
+      renderKategoriTable(cache.flat);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menyimpan kategori. Cek koneksi atau rules Firebase.");
+      saveBtn.textContent = "Simpan";
+    }
+  });
 
 // ============================================================================
 // Stok
 // ============================================================================
 
 function renderStokTable(flat) {
-  const setorAll =
-    flat.filter(
-      (t) => t.tipe === "Setor",
-    );
+  const dayKeys = new Set(last30Days().map(isoDate));
+  const setorAll = flat.filter((t) =>
+    t.tipe === "Setor" && dayKeys.has(t.tanggal?.slice(0, 10)),
+  );
+  const wasteOutAll = flat.filter((t) =>
+    (t.isWasteOut || t.tipe === "Pengeluaran Sampah") && dayKeys.has(t.tanggal?.slice(0, 10)),
+  );
 
   document.getElementById(
     "tableStok",
   ).innerHTML =
     cache.kategori
       .map((k) => {
-        const totalKg =
-          setorAll
-            .filter(
-              (t) =>
-                t.kategori ===
-                k.nama,
-            )
-            .reduce(
-              (sum, t) =>
-                sum +
-                (parseFloat(
-                  t.berat_kg,
-                ) || 0),
-              0,
-            );
+        const masukKg = setorAll.reduce((sum, t) => sum + getSetorItems(t)
+          .filter((item) => item.kategori === k.nama)
+          .reduce((sub, item) => sub + (Number(item.berat_kg) || 0), 0), 0);
+        const keluarKg = wasteOutAll.reduce((sum, t) => sum + getWasteOutItems(t)
+          .filter((item) => item.kategori === k.nama)
+          .reduce((sub, item) => sub + (Number(item.berat_kg) || 0), 0), 0);
+        const totalKg = Math.max(0, masukKg - keluarKg);
 
         const nilai =
           totalKg * k.harga;
@@ -1366,9 +1436,9 @@ function renderKeuangan(
   flat,
 ) {
   const dayKeys =
-    last7Days().map(isoDate);
+    last30Days().map(isoDate);
 
-  const last7 = flat.filter(
+  const last30 = flat.filter(
     (t) =>
       dayKeys.includes(
         t.tanggal?.slice(0, 10),
@@ -1376,7 +1446,7 @@ function renderKeuangan(
   );
 
   const masuk =
-    last7
+    last30
       .filter(
         (t) => t.tipe === "Setor",
       )
@@ -1387,7 +1457,7 @@ function renderKeuangan(
       );
 
   const keluar =
-    last7
+    last30
       .filter(
         (t) => t.tipe === "Tarik",
       )
@@ -1439,21 +1509,21 @@ function renderRaport(
   flat,
 ) {
   const dayKeys =
-    last7Days().map(isoDate);
+    last30Days().map(isoDate);
 
-  const last7 = flat.filter(
+  const last30 = flat.filter(
     (t) =>
       dayKeys.includes(
         t.tanggal?.slice(0, 10),
       ),
   );
 
-  const setor7 = last7.filter(
+  const setor30 = last30.filter(
     (t) => t.tipe === "Setor",
   );
 
   const totalKg =
-    setor7.reduce(
+    setor30.reduce(
       (s, t) =>
         s +
         (parseFloat(
@@ -1464,13 +1534,13 @@ function renderRaport(
 
   const nasabahAktif =
     new Set(
-      last7.map(
+      last30.map(
         (t) => t.uid,
       ),
     ).size;
 
   const totalNilaiSetor =
-    setor7.reduce(
+    setor30.reduce(
       (s, t) =>
         s +
         (t.total_rp || 0),
@@ -1478,10 +1548,10 @@ function renderRaport(
     );
 
   const rataRata =
-    setor7.length
+    setor30.length
       ? Math.round(
           totalNilaiSetor /
-            setor7.length,
+            setor30.length,
         )
       : 0;
 
@@ -1492,12 +1562,12 @@ function renderRaport(
     ],
 
     [
-      "Total sampah disetor (7 hari)",
+      "Total sampah disetor (30 hari)",
       formatKg(totalKg),
     ],
 
     [
-      "Nasabah aktif (7 hari)",
+      "Nasabah aktif (30 hari)",
       nasabahAktif,
     ],
 
@@ -1507,8 +1577,8 @@ function renderRaport(
     ],
 
     [
-      "Total transaksi (7 hari)",
-      last7.length,
+      "Total transaksi (30 hari)",
+      last30.length,
     ],
   ];
 
@@ -1530,6 +1600,288 @@ function renderRaport(
         `,
       )
       .join("");
+}
+
+// ============================================================================
+// Laporan bulanan + PDF
+// ============================================================================
+
+function monthKey(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(key) {
+  const [year, month] = key.split("-").map(Number);
+  return new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month - 1, 1));
+}
+
+function getMonthlyData(flat, key) {
+  const [year, month] = key.split("-").map(Number);
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  const days = [];
+
+  for (let day = 1; day <= end.getDate(); day += 1) {
+    days.push(new Date(year, month - 1, day));
+  }
+
+  const tx = flat.filter((t) => {
+    if (!t.tanggal) return false;
+    const d = new Date(t.tanggal);
+    return d >= start && d <= new Date(year, month - 1, end.getDate(), 23, 59, 59, 999);
+  });
+
+  const masuk = days.map((d) => {
+    const k = isoDate(d);
+    return tx.filter((t) => t.tanggal?.slice(0, 10) === k && t.tipe === "Setor")
+      .reduce((sum, t) => sum + (Number(t.total_rp) || 0), 0);
+  });
+
+  const tarik = days.map((d) => {
+    const k = isoDate(d);
+    return tx.filter((t) => t.tanggal?.slice(0, 10) === k && t.tipe === "Tarik")
+      .reduce((sum, t) => sum + (Number(t.total_rp) || 0), 0);
+  });
+
+  const setor = tx.filter((t) => t.tipe === "Setor");
+  const tarikTx = tx.filter((t) => t.tipe === "Tarik");
+  const totalKg = setor.reduce((sum, t) => sum + totalBeratTx(t), 0);
+  const totalMasuk = masuk.reduce((a, b) => a + b, 0);
+  const totalTarik = tarik.reduce((a, b) => a + b, 0);
+  const activeCustomers = new Set(tx.filter((t) => !t.isWasteOut && t.uid).map((t) => t.uid)).size;
+  const wasteOut = tx.filter((t) => t.isWasteOut || t.tipe === "Pengeluaran Sampah");
+  const totalOutKg = wasteOut.reduce((sum, t) => sum + totalBeratWasteOut(t), 0);
+
+  const categoryTotals = {};
+  setor.forEach((t) => {
+    getSetorItems(t).forEach((item) => {
+      const k = item.kategori || "Lainnya";
+      categoryTotals[k] = (categoryTotals[k] || 0) + (Number(item.berat_kg) || 0);
+    });
+  });
+
+  return {
+    key,
+    label: monthLabel(key),
+    days,
+    masuk,
+    tarik,
+    tx,
+    setor,
+    tarikTx,
+    totalKg,
+    totalOutKg,
+    wasteOut,
+    totalMasuk,
+    totalTarik,
+    net: totalMasuk - totalTarik,
+    activeCustomers,
+    categoryTotals,
+  };
+}
+
+function renderMonthlyReportPreview() {
+  const input = document.getElementById("reportMonth");
+  const key = input?.value || monthKey(new Date());
+  const data = getMonthlyData(cache.flat, key);
+  const categoryRows = Object.entries(data.categoryTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, kg]) => `<tr><td>${name}</td><td>${formatKg(kg)}</td></tr>`)
+    .join("") || '<tr><td colspan="2">Belum ada setoran pada bulan ini.</td></tr>';
+
+  const avg = data.setor.length ? Math.round(data.totalMasuk / data.setor.length) : 0;
+  const bestIndex = data.masuk.reduce((best, value, i, arr) => value > arr[best] ? i : best, 0);
+  const bestDay = data.masuk[bestIndex] > 0 ? `${data.days[bestIndex].getDate()} ${monthLabel(key).split(" ")[0]}` : "-";
+
+  document.getElementById("monthlyReportStats").innerHTML = `
+    <div class="report-stat"><span>Total sampah masuk</span><strong>${formatKg(data.totalKg)}</strong></div>
+    <div class="report-stat"><span>Total sampah keluar</span><strong>${formatKg(data.totalOutKg)}</strong></div>
+    <div class="report-stat"><span>Uang masuk / setor</span><strong>${formatRp(data.totalMasuk)}</strong></div>
+    <div class="report-stat"><span>Uang ditarik</span><strong>${formatRp(data.totalTarik)}</strong></div>
+    <div class="report-stat"><span>Saldo bersih arus transaksi</span><strong>${formatRp(data.net)}</strong></div>
+    <div class="report-stat"><span>Nasabah aktif</span><strong>${data.activeCustomers}</strong></div>
+    <div class="report-stat"><span>Total transaksi</span><strong>${data.tx.length}</strong></div>
+  `;
+
+  document.getElementById("monthlyCategoryBody").innerHTML = categoryRows;
+  document.getElementById("monthlyAnalysis").textContent = data.tx.length
+    ? `Bulan ${data.label}: tercatat ${data.tx.length} transaksi dari ${data.activeCustomers} nasabah aktif. Setoran menghasilkan ${formatKg(data.totalKg)} sampah dengan nilai ${formatRp(data.totalMasuk)}. Sampah yang dikeluarkan ke pengepul/pihak lain mencapai ${formatKg(data.totalOutKg)}. Penarikan saldo mencapai ${formatRp(data.totalTarik)}. Hari dengan pemasukan setor tertinggi adalah ${bestDay}. Rata-rata nilai setiap transaksi setor ${formatRp(avg)}.`
+    : `Belum ada transaksi pada ${data.label}.`;
+}
+
+function drawPdfChart(doc, data, x, y, width, height) {
+  const left = x + 38;
+  const right = x + width - 10;
+  const top = y + 12;
+  const bottom = y + height - 24;
+  const max = Math.max(1, ...data.masuk, ...data.tarik);
+  const stepX = (right - left) / Math.max(1, data.days.length - 1);
+  const py = (v) => bottom - (v / max) * (bottom - top);
+
+  doc.setDrawColor(220, 228, 223);
+  doc.setLineWidth(0.35);
+  for (let i = 0; i <= 4; i += 1) {
+    const gy = top + ((bottom - top) * i) / 4;
+    doc.line(left, gy, right, gy);
+    doc.setFontSize(7);
+    doc.setTextColor(100, 112, 106);
+    doc.text(formatRp(max * (1 - i / 4)), x + 2, gy + 2);
+  }
+
+  const drawSeries = (values, color) => {
+    doc.setDrawColor(...color);
+    doc.setFillColor(...color);
+    doc.setLineWidth(1.1);
+    for (let i = 1; i < values.length; i += 1) {
+      doc.line(left + (i - 1) * stepX, py(values[i - 1]), left + i * stepX, py(values[i]));
+    }
+    values.forEach((v, i) => {
+      if (v <= 0) return;
+      doc.circle(left + i * stepX, py(v), 1.2, "F");
+    });
+  };
+
+  drawSeries(data.masuk, [30, 122, 76]);
+  drawSeries(data.tarik, [18, 168, 131]);
+
+  doc.setFontSize(7);
+  doc.setTextColor(90, 103, 96);
+  data.days.forEach((d, i) => {
+    if (i % 5 !== 0 && i !== data.days.length - 1) return;
+    doc.text(`${d.getDate()}/${d.getMonth() + 1}`, left + i * stepX - 5, bottom + 12);
+  });
+
+  doc.setDrawColor(30, 122, 76);
+  doc.setLineWidth(1.5);
+  doc.line(x + 50, y + height - 5, x + 62, y + height - 5);
+  doc.setTextColor(55, 70, 63);
+  doc.text("Masuk", x + 65, y + height - 3);
+  doc.setDrawColor(18, 168, 131);
+  doc.line(x + 100, y + height - 5, x + 112, y + height - 5);
+  doc.setTextColor(55, 70, 63);
+  doc.text("Narik", x + 115, y + height - 3);
+}
+
+async function downloadMonthlyPdf() {
+  const input = document.getElementById("reportMonth");
+  const key = input?.value || monthKey(new Date());
+  const data = getMonthlyData(cache.flat, key);
+
+  if (!window.jspdf?.jsPDF) {
+    alert("Library PDF belum siap. Pastikan internet aktif lalu coba lagi.");
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const margin = 15;
+  let y = 18;
+
+  doc.setTextColor(16, 36, 27);
+  doc.setFontSize(18);
+  doc.setFont(undefined, "bold");
+  doc.text("Resik For Schooling", margin, y);
+  y += 8;
+  doc.setFontSize(13);
+  doc.text(`Rekapan Bulanan — ${data.label}`, margin, y);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 106);
+  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
+  y += 10;
+
+  const cards = [
+    ["Sampah masuk", formatKg(data.totalKg)],
+    ["Uang masuk", formatRp(data.totalMasuk)],
+    ["Uang ditarik", formatRp(data.totalTarik)],
+    ["Saldo bersih", formatRp(data.net)],
+  ];
+  const cardW = 43;
+  cards.forEach(([label, value], i) => {
+    const x = margin + i * (cardW + 3);
+    doc.setFillColor(241, 245, 241);
+    doc.roundedRect(x, y, cardW, 20, 2.5, 2.5, "F");
+    doc.setTextColor(100, 112, 106);
+    doc.setFontSize(7.5);
+    doc.text(label, x + 4, y + 7);
+    doc.setTextColor(16, 36, 27);
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold");
+    doc.text(value, x + 4, y + 15);
+    doc.setFont(undefined, "normal");
+  });
+  y += 28;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Arus Transaksi Harian", margin, y);
+  y += 3;
+  drawPdfChart(doc, data, margin, y, 180, 78);
+  y += 86;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.text("Analisis", margin, y);
+  y += 6;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  const avg = data.setor.length ? Math.round(data.totalMasuk / data.setor.length) : 0;
+  const bestIndex = data.masuk.reduce((best, value, i, arr) => value > arr[best] ? i : best, 0);
+  const bestDay = data.masuk[bestIndex] > 0 ? `${data.days[bestIndex].getDate()}/${data.days[bestIndex].getMonth() + 1}` : "-";
+  const analysis = `Pada ${data.label}, terdapat ${data.tx.length} transaksi dari ${data.activeCustomers} nasabah aktif. Sampah yang masuk mencapai ${formatKg(data.totalKg)} dengan nilai setor ${formatRp(data.totalMasuk)}. Sampah yang dikeluarkan ke pengepul/pihak lain mencapai ${formatKg(data.totalOutKg)}. Penarikan saldo mencapai ${formatRp(data.totalTarik)}, sehingga arus bersih sebesar ${formatRp(data.net)}. Pemasukan setor tertinggi terjadi pada ${bestDay}, dengan rata-rata nilai transaksi setor ${formatRp(avg)}.`;
+  const lines = doc.splitTextToSize(analysis, 180);
+  doc.text(lines, margin, y);
+  y += lines.length * 4 + 7;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.text("Rekap Kategori Sampah", margin, y);
+  y += 5;
+  doc.setFont(undefined, "normal");
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Kategori", margin + 3, y + 5);
+  doc.text("Total", margin + 150, y + 5);
+  y += 7;
+  doc.setTextColor(45, 60, 53);
+
+  Object.entries(data.categoryTotals).sort((a, b) => b[1] - a[1]).forEach(([name, kg], i) => {
+    if (y > 275) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.text(name, margin + 3, y + 5);
+    doc.text(formatKg(kg), margin + 150, y + 5);
+    y += 7;
+  });
+
+  doc.setTextColor(120, 130, 125);
+  doc.setFontSize(7);
+  doc.text("Laporan dibuat otomatis dari transaksi yang tersimpan di Firebase.", margin, 287);
+  doc.save(`rekapan-${key}.pdf`);
+}
+
+document.getElementById("btnDownloadReport")?.addEventListener("click", downloadMonthlyPdf);
+
+document.getElementById("reportMonth")?.addEventListener("change", renderMonthlyReportPreview);
+
+function initMonthlyReport() {
+  const input = document.getElementById("reportMonth");
+  if (!input) return;
+  input.value = monthKey(new Date());
+  renderMonthlyReportPreview();
 }
 
 // ============================================================================
@@ -1590,6 +1942,7 @@ async function showView(name) {
       cache.users,
       cache.flat,
     );
+    renderMonthlyReportPreview();
   }
 }
 
@@ -1610,6 +1963,38 @@ document
       );
     },
   );
+
+// ============================================================================
+// Mobile nav drawer
+// ============================================================================
+
+const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+const sidebarEl = document.querySelector(".sidebar");
+const sidebarOverlay = document.getElementById("sidebarOverlay");
+
+function openSidebar() {
+  sidebarEl?.classList.add("is-open");
+  sidebarOverlay?.classList.add("is-open");
+}
+
+function closeSidebar() {
+  sidebarEl?.classList.remove("is-open");
+  sidebarOverlay?.classList.remove("is-open");
+}
+
+mobileMenuBtn?.addEventListener("click", () => {
+  const isOpen = sidebarEl?.classList.contains("is-open");
+  isOpen ? closeSidebar() : openSidebar();
+});
+
+sidebarOverlay?.addEventListener("click", closeSidebar);
+
+// Tutup drawer otomatis begitu user pilih menu di layar sempit.
+document
+  .getElementById("navGroup")
+  ?.addEventListener("click", (e) => {
+    if (e.target.closest(".nav-item")) closeSidebar();
+  });
 
 // ============================================================================
 // Dashboard search
@@ -1648,6 +2033,134 @@ document
       );
     },
   );
+
+// ============================================================================
+// Pengeluaran sampah — sampah fisik keluar untuk ditimbang/dijual di luar
+// ============================================================================
+
+const wasteOutItemsEl = document.getElementById("wasteOutItems");
+const wasteOutDateEl = document.getElementById("wasteOutDate");
+const wasteOutReceiverEl = document.getElementById("wasteOutReceiver");
+const wasteOutNoteEl = document.getElementById("wasteOutNote");
+const wasteOutTotalEl = document.getElementById("wasteOutTotal");
+
+function wasteOutRowHtml(selected = "", berat = "") {
+  return `<div class="multi-item-row waste-out-row">
+    <select class="select-input waste-out-kategori">
+      ${cache.kategori.map((k) => `<option value="${escapeHtml(k.nama)}" ${k.nama === selected ? "selected" : ""}>${escapeHtml(k.nama)} — ${formatRp(k.harga)}/kg</option>`).join("")}
+    </select>
+    <input type="number" min="0.01" step="0.01" class="text-input waste-out-berat" value="${berat}" placeholder="Kg" />
+    <button type="button" class="link-btn is-danger waste-out-remove">Hapus</button>
+  </div>`;
+}
+
+function resetWasteOutItems() {
+  if (wasteOutItemsEl) wasteOutItemsEl.innerHTML = wasteOutRowHtml();
+}
+
+function getCurrentWasteOutItems() {
+  return [...document.querySelectorAll(".waste-out-row")]
+    .map((row) => ({
+      kategori: row.querySelector(".waste-out-kategori")?.value || "",
+      berat_kg: parseFloat(row.querySelector(".waste-out-berat")?.value) || 0,
+    }))
+    .filter((item) => item.kategori && item.berat_kg > 0);
+}
+
+function kalkulasiWasteOut() {
+  const total = getCurrentWasteOutItems().reduce(
+    (sum, item) => sum + item.berat_kg,
+    0,
+  );
+  if (wasteOutTotalEl) wasteOutTotalEl.textContent = formatKg(total);
+  return total;
+}
+
+function initWasteOutForm() {
+  if (!wasteOutItemsEl) return;
+
+  const today = isoDate(new Date());
+  if (wasteOutDateEl && !wasteOutDateEl.value) wasteOutDateEl.value = today;
+  resetWasteOutItems();
+  kalkulasiWasteOut();
+
+  wasteOutItemsEl.addEventListener("input", kalkulasiWasteOut);
+  wasteOutItemsEl.addEventListener("change", kalkulasiWasteOut);
+  wasteOutItemsEl.addEventListener("click", (event) => {
+    const removeBtn = event.target.closest(".waste-out-remove");
+    if (!removeBtn) return;
+
+    const rows = document.querySelectorAll(".waste-out-row");
+    if (rows.length <= 1) {
+      const weightInput = removeBtn.closest(".waste-out-row")?.querySelector(".waste-out-berat");
+      if (weightInput) weightInput.value = "";
+    } else {
+      removeBtn.closest(".waste-out-row")?.remove();
+    }
+    kalkulasiWasteOut();
+  });
+
+  document.getElementById("btnTambahWasteOut")?.addEventListener("click", () => {
+    wasteOutItemsEl.insertAdjacentHTML("beforeend", wasteOutRowHtml());
+  });
+
+  document.getElementById("btnSimpanWasteOut")?.addEventListener("click", async () => {
+    const items = getCurrentWasteOutItems();
+    const totalKg = items.reduce((sum, item) => sum + item.berat_kg, 0);
+    const tanggalInput = wasteOutDateEl?.value;
+    const receiver = wasteOutReceiverEl?.value.trim() || "";
+    const note = wasteOutNoteEl?.value.trim() || "";
+
+    if (!tanggalInput) {
+      alert("Tanggal pengeluaran wajib diisi.");
+      return;
+    }
+    if (!items.length || totalKg <= 0) {
+      alert("Tambahkan minimal satu kategori dan berat sampah.");
+      return;
+    }
+    if (!receiver) {
+      alert("Pengepul / penerima wajib diisi.");
+      return;
+    }
+
+    const btn = document.getElementById("btnSimpanWasteOut");
+    if (btn) btn.disabled = true;
+
+    try {
+      const key = push(ref(db, "waste_out")).key;
+      if (!key) throw new Error("Gagal membuat key pengeluaran sampah.");
+
+      const txn = {
+        tipe: "Pengeluaran Sampah",
+        tanggal: new Date(`${tanggalInput}T12:00:00`).toISOString(),
+        pengepul: receiver,
+        catatan: note,
+        items,
+        berat_kg: totalKg,
+        total_rp: 0,
+        admin_pencatat: "Admin Sekolah",
+      };
+
+      await update(ref(db), { [`waste_out/${key}`]: txn });
+
+      alert("Pengeluaran sampah berhasil dicatat!");
+      if (wasteOutReceiverEl) wasteOutReceiverEl.value = "";
+      if (wasteOutNoteEl) wasteOutNoteEl.value = "";
+      if (wasteOutDateEl) wasteOutDateEl.value = isoDate(new Date());
+      resetWasteOutItems();
+      kalkulasiWasteOut();
+      await loadDashboard();
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menyimpan pengeluaran sampah. Cek koneksi atau rules Firebase.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
+initWasteOutForm();
 
 // ============================================================================
 // Transaksi
@@ -1697,72 +2210,21 @@ const jenisTx =
     "jenisTx",
   );
 
-const kategoriSelect =
-  document.getElementById(
-    "kategori",
-  );
+const kategoriSelect = document.getElementById("kategori");
+const wrapperSampah = document.getElementById("wrapperSampah");
+const setorItemsEl = document.getElementById("setorItems");
+const inputJumlah = document.getElementById("inputJumlah");
+const txtTotal = document.getElementById("txtTotal");
+const labelInput = document.getElementById("labelInput");
+const readerEl = document.getElementById("reader");
+const scanToggleButtons = document.querySelectorAll("#scanToggle .scan-toggle-btn");
 
-const wrapperSampah =
-  document.getElementById(
-    "wrapperSampah",
-  );
+scanToggleButtons.forEach((btn) => btn.addEventListener("click", () => {
+  scanJenisPreset = btn.dataset.jenis;
+  scanToggleButtons.forEach((b) => b.classList.toggle("is-active", b === btn));
+}));
 
-const inputJumlah =
-  document.getElementById(
-    "inputJumlah",
-  );
-
-const txtTotal =
-  document.getElementById(
-    "txtTotal",
-  );
-
-const labelInput =
-  document.getElementById(
-    "labelInput",
-  );
-
-const readerEl =
-  document.getElementById(
-    "reader",
-  );
-
-const scanToggleButtons =
-  document.querySelectorAll(
-    "#scanToggle .scan-toggle-btn",
-  );
-
-scanToggleButtons.forEach(
-  (btn) => {
-    btn.addEventListener(
-      "click",
-      () => {
-        scanJenisPreset =
-          btn.dataset.jenis;
-
-        scanToggleButtons.forEach(
-          (b) => {
-            b.classList.toggle(
-              "is-active",
-              b === btn,
-            );
-          },
-        );
-      },
-    );
-  },
-);
-
-// Terapkan jenis transaksi hasil pilihan toggle scan ke form (dropdown
-// "Jenis Transaksi"), lalu jalankan ulang logic yang sama seperti kalau
-// user ganti dropdown itu manual (tampilkan/sembunyikan kategori,
-// ubah label nominal, hitung ulang total).
 function applyScanJenisPreset() {
-  if (jenisTx.value === scanJenisPreset) {
-    kalkulasi();
-    return;
-  }
-
   jenisTx.value = scanJenisPreset;
   jenisTx.dispatchEvent(new Event("change"));
 }
@@ -1773,203 +2235,137 @@ function applyScanJenisPreset() {
 
 async function cariNasabah(uid) {
   try {
-    const snapshot =
-      await get(
-        child(
-          ref(db),
-          `users/${uid}`,
-        ),
-      );
-
+    const snapshot = await get(child(ref(db), `users/${uid}`));
     if (!snapshot.exists()) {
-      alert(
-        "Nasabah tidak ditemukan!",
-      );
-
+      alert("Nasabah tidak ditemukan!");
       return;
     }
 
     currentUID = uid;
-
-    currentNasabahData =
-      snapshot.val();
-
-    txtNama.textContent =
-      `${currentNasabahData.nama} (${currentNasabahData.kelas})`;
-
-    txtSaldo.textContent =
-      formatRp(
-        currentNasabahData.saldo_terakhir ||
-          0,
-      );
-
-    divProfil.classList.remove(
-      "is-hidden",
-      "hidden",
-    );
-
-    divForm.classList.remove(
-      "is-hidden",
-      "hidden",
-    );
-
-    txEmptyNote.classList.add(
-      "hidden",
-    );
+    currentNasabahData = snapshot.val();
+    txtNama.textContent = `${currentNasabahData.nama} (${currentNasabahData.kelas || ""})`;
+    txtSaldo.textContent = formatRp(currentNasabahData.saldo_terakhir || 0);
+    divProfil.classList.remove("is-hidden", "hidden");
+    divForm.classList.remove("is-hidden", "hidden");
+    txEmptyNote.classList.add("hidden");
 
     if (html5QrcodeScanner) {
-      try {
-        await html5QrcodeScanner.clear();
-      } catch (err) {
-        console.warn(
-          "QR scanner clear gagal:",
-          err,
-        );
-      }
-
+      try { await html5QrcodeScanner.clear(); } catch (err) { console.warn("QR scanner clear gagal:", err); }
       html5QrcodeScanner = null;
-
-      readerEl.classList.add(
-        "is-hidden",
-      );
+      readerEl.classList.add("is-hidden");
     }
-
     kalkulasi();
   } catch (err) {
     console.error(err);
-
-    alert(
-      "Gagal koneksi ke database. Pastikan rules database sudah benar.",
-    );
+    alert("Gagal koneksi ke database. Pastikan rules database sudah benar.");
   }
 }
 
-document
-  .getElementById("btnCari")
-  .addEventListener(
-    "click",
-    () => {
-      const uid =
-        inputId.value.trim();
-
-      if (uid) {
-        cariNasabah(uid);
-      }
-    },
-  );
+document.getElementById("btnCari")?.addEventListener("click", () => {
+  const uid = inputId.value.trim();
+  if (uid) cariNasabah(uid);
+});
 
 // ============================================================================
 // QR Scanner
 // ============================================================================
 
-document
-  .getElementById("btnScan")
-  .addEventListener(
-    "click",
-    () => {
-      readerEl.classList.remove(
-        "is-hidden",
-        "hidden",
-      );
-
-      // eslint-disable-next-line no-undef
-      html5QrcodeScanner =
-        new Html5QrcodeScanner(
-          "reader",
-          {
-            fps: 10,
-            qrbox: 250,
-          },
-        );
-
-      html5QrcodeScanner.render(
-        (decodedText) => {
-          inputId.value =
-            decodedText;
-
-          // Setelah nasabah ketemu, langsung pasang jenis transaksi
-          // sesuai toggle yang dipilih admin (Setor/Tarik) supaya
-          // penarikan tunai lewat scan QR bisa langsung diproses tanpa
-          // langkah tambahan ganti dropdown manual.
-          cariNasabah(
-            decodedText,
-          ).then(() => {
-            applyScanJenisPreset();
-          });
-        },
-      );
-    },
-  );
-
-// ============================================================================
-// Kalkulasi transaksi
-// ============================================================================
-
-function kalkulasi() {
-  const jumlah =
-    parseFloat(
-      inputJumlah.value,
-    ) || 0;
-
-  if (
-    jenisTx.value === "Setor"
-  ) {
-    const harga =
-      hargaKategoriOf(
-        kategoriSelect.value,
-      );
-
-    finalAmount =
-      jumlah * harga;
-  } else {
-    finalAmount = jumlah;
+document.getElementById("btnScan")?.addEventListener("click", () => {
+  if (typeof Html5QrcodeScanner === "undefined") {
+    alert("Scanner QR belum siap. Pastikan koneksi internet aktif lalu coba lagi.");
+    return;
   }
 
-  txtTotal.textContent =
-    formatRp(finalAmount);
+  if (html5QrcodeScanner) {
+    try { html5QrcodeScanner.clear(); } catch (_) {}
+    html5QrcodeScanner = null;
+  }
+
+  readerEl.classList.remove("is-hidden", "hidden");
+  html5QrcodeScanner = new Html5QrcodeScanner("reader", {
+    fps: 10,
+    qrbox: 250,
+    rememberLastUsedCamera: true,
+    supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+  });
+
+  html5QrcodeScanner.render(
+    (decodedText) => {
+      inputId.value = decodedText.trim();
+      cariNasabah(decodedText.trim()).then(() => applyScanJenisPreset());
+    },
+    (errorMessage) => {
+      // Error scan per-frame normal; tidak perlu ditampilkan ke user.
+    }
+  );
+});
+
+function kategoriRowHtml(selected = "", berat = "") {
+  return `<div class="multi-item-row tx-item-row">
+    <select class="select-input tx-kategori">
+      ${cache.kategori.map((k) => `<option value="${k.nama}" ${k.nama === selected ? "selected" : ""}>${k.nama} — ${formatRp(k.harga)}/kg</option>`).join("")}
+    </select>
+    <input type="number" min="0.01" step="0.01" class="text-input tx-berat" value="${berat}" placeholder="Kg" />
+    <button type="button" class="link-btn is-danger tx-remove-item" aria-label="Hapus kategori">Hapus</button>
+  </div>`;
 }
 
-inputJumlah.addEventListener(
-  "input",
-  kalkulasi,
-);
+function resetSetorItems() {
+  if (setorItemsEl) setorItemsEl.innerHTML = kategoriRowHtml();
+}
 
-kategoriSelect.addEventListener(
-  "change",
-  kalkulasi,
-);
+function getCurrentSetorItems() {
+  return [...document.querySelectorAll(".tx-item-row")].map((row) => {
+    const kategori = row.querySelector(".tx-kategori")?.value || "";
+    const berat = parseFloat(row.querySelector(".tx-berat")?.value) || 0;
+    const harga = hargaKategoriOf(kategori);
+    return { kategori, berat_kg: berat, harga_per_kg: harga, total_rp: berat * harga };
+  }).filter((item) => item.kategori && item.berat_kg > 0);
+}
 
-jenisTx.addEventListener(
-  "change",
-  (e) => {
-    if (
-      e.target.value ===
-      "Tarik"
-    ) {
-      wrapperSampah.style.visibility =
-        "hidden";
+function kalkulasi() {
+  if (jenisTx.value === "Setor") {
+    const total = totalNilaiItems(getCurrentSetorItems());
+    finalAmount = total;
+    txtTotal.textContent = formatRp(total);
+    return;
+  }
+  finalAmount = parseFloat(inputJumlah.value) || 0;
+  txtTotal.textContent = formatRp(finalAmount);
+}
 
-      labelInput.textContent =
-        "Nominal Penarikan (Rp)";
+setorItemsEl?.addEventListener("input", kalkulasi);
+setorItemsEl?.addEventListener("change", kalkulasi);
+setorItemsEl?.addEventListener("click", (e) => {
+  const removeBtn = e.target.closest(".tx-remove-item");
+  if (!removeBtn) return;
+  const rows = document.querySelectorAll(".tx-item-row");
+  if (rows.length <= 1) {
+    const weightInput = removeBtn.closest(".tx-item-row")?.querySelector(".tx-berat");
+    if (weightInput) weightInput.value = "";
+  } else {
+    removeBtn.closest(".tx-item-row")?.remove();
+  }
+  kalkulasi();
+});
 
-      inputJumlah.placeholder =
-        "Misal: 10000";
-    } else {
-      wrapperSampah.style.visibility =
-        "visible";
+document.getElementById("btnTambahJenisSampah")?.addEventListener("click", () => {
+  setorItemsEl.insertAdjacentHTML("beforeend", kategoriRowHtml());
+});
 
-      labelInput.textContent =
-        "Berat (Kg)";
-
-      inputJumlah.placeholder =
-        "Misal: 2";
-    }
-
+inputJumlah.addEventListener("input", kalkulasi);
+jenisTx.addEventListener("change", (e) => {
+  const isSetor = e.target.value === "Setor";
+  wrapperSampah.style.display = isSetor ? "block" : "none";
+  inputJumlah.style.display = isSetor ? "none" : "block";
+  labelInput.style.display = isSetor ? "none" : "block";
+  if (isSetor) {
+    resetSetorItems();
+  } else {
     inputJumlah.value = "";
-
-    kalkulasi();
-  },
-);
+  }
+  kalkulasi();
+});
 
 // ============================================================================
 // Proses transaksi
@@ -2021,20 +2417,20 @@ document
       const txnData = {
         tipe: jenisTx.value,
         total_rp: finalAmount,
-        tanggal:
-          new Date().toISOString(),
-        admin_pencatat:
-          "Admin Sekolah",
+        tanggal: new Date().toISOString(),
+        admin_pencatat: "Admin Sekolah",
       };
 
       if (isSetor) {
-        txnData.kategori =
-          kategoriSelect.value;
-
-        txnData.berat_kg =
-          parseFloat(
-            inputJumlah.value,
-          );
+        const items = getCurrentSetorItems();
+        if (!items.length) {
+          alert("Tambahkan minimal satu kategori dan berat sampah.");
+          return;
+        }
+        txnData.items = items;
+        // Tetap simpan field lama untuk kompatibilitas data/transaksi lama.
+        txnData.kategori = items.length === 1 ? items[0].kategori : "Multi-kategori";
+        txnData.berat_kg = items.reduce((sum, item) => sum + item.berat_kg, 0);
       }
 
       try {
@@ -2072,7 +2468,7 @@ document
         );
 
         inputJumlah.value = "";
-
+        resetSetorItems();
         kalkulasi();
 
         await cariNasabah(

@@ -38,6 +38,10 @@
 
 * { box-sizing: border-box; }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -45,6 +49,7 @@ html, body {
   color: var(--color-ink);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 body {
@@ -56,9 +61,13 @@ button, input, select {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
-button { cursor: pointer; }
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
 
 a { color: inherit; text-decoration: none; }
 
@@ -68,6 +77,20 @@ a { color: inherit; text-decoration: none; }
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* Scrollbar tipis biar seragam di semua browser berbasis Chromium/Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
 /* ==========================================================================
    Shell layout
@@ -80,12 +103,81 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 1180px) {
   .app-shell { grid-template-columns: 220px minmax(0, 1fr); }
-  .side-panel { display: none; }
+
+  /* Daripada disembunyikan total, panel kanan (saldo & transaksi
+     terakhir) dipindah jadi satu baris penuh di bawah konten utama
+     supaya tetap kebaca di tablet. */
+  .side-panel {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid var(--color-border-soft);
+  }
 }
+
+
+
+/* Topbar & drawer untuk layar sempit — disembunyikan by default,
+   baru muncul di breakpoint mobile di bawah. */
+.mobile-topbar { display: none; }
+.sidebar-overlay { display: none; }
 
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border-soft);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .mobile-menu-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .mobile-menu-btn svg { width: 20px; height: 20px; stroke: var(--color-ink); }
+
+  /* Sidebar jadi drawer off-canvas, digeser masuk dari kiri saat dibuka. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    max-width: 82vw;
+    z-index: 70;
+    transform: translateX(-100%);
+    transition: transform 220ms ease;
+    box-shadow: 12px 0 32px rgba(16, 36, 27, 0.18);
+  }
+
+  .sidebar.is-open { transform: translateX(0); }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 36, 27, 0.4);
+    z-index: 65;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+
+  .sidebar-overlay.is-open { opacity: 1; pointer-events: auto; }
 }
 
 /* ==========================================================================
@@ -231,12 +323,31 @@ a { color: inherit; text-decoration: none; }
   min-width: 0;
 }
 
+@media (max-width: 760px) {
+  .main { padding: 18px 16px 32px; }
+
+  /* Font di bawah 16px bikin Safari iOS auto-zoom pas input difokus —
+     dinaikin dikit khusus di HP biar gak "loncat" zoom-nya. */
+  .text-input,
+  .select-input,
+  .auth-input,
+  .search-field input {
+    font-size: 16px;
+  }
+}
+
 .main-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 14px 20px;
   margin-bottom: 24px;
+}
+
+@media (max-width: 760px) {
+  .main-header { margin-bottom: 18px; }
+  .main-title { font-size: 19px; }
 }
 
 .main-title {
@@ -260,6 +371,11 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   padding: 9px 16px;
   min-width: 260px;
+  flex: 1 1 260px;
+}
+
+@media (max-width: 480px) {
+  .search-field { min-width: 0; flex-basis: 100%; }
 }
 
 .search-field svg { width: 16px; height: 16px; stroke: var(--color-muted); flex-shrink: 0; }
@@ -300,6 +416,14 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 12px;
   box-shadow: var(--shadow-card);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+@media (hover: hover) {
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(16, 36, 27, 0.06), 0 14px 28px rgba(16, 36, 27, 0.09);
+  }
 }
 
 .stat-icon {
@@ -344,6 +468,11 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: 20px;
+}
+
+@media (max-width: 480px) {
+  .panel, .panel-dark { padding: 16px; }
+  .stat-card { padding: 14px 16px; }
 }
 
 .panel-head {
@@ -401,6 +530,12 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   gap: 18px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 380px) {
+  .donut-wrap { justify-content: center; }
+  .legend { flex-basis: 100%; }
 }
 
 .donut-figure { position: relative; flex-shrink: 0; width: 150px; height: 150px; }
@@ -510,7 +645,12 @@ a { color: inherit; text-decoration: none; }
 
 .chart-legend i { width: 8px; height: 8px; border-radius: 50%; }
 
-.chart-figure { width: 100%; height: 190px; }
+.chart-figure {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 640 / 300;
+  display: block;
+}
 
 .chart-figure text {
   font-family: var(--font-mono);
@@ -709,6 +849,33 @@ a { color: inherit; text-decoration: none; }
   padding: 10px 0;
 }
 
+/* Di lebar "setengah layar" (kira-kira 641px–1180px) satu kolom penuh
+   yang isinya cuma kartu saldo + list transaksi bikin semuanya melar
+   dan keliatan aneh/kosong. Di rentang ini disusun jadi 2 kolom yang
+   rapi dan dibatasi lebarnya biar gak ngambang di layar lebar. */
+@media (max-width: 1180px) and (min-width: 641px) {
+  .side-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar"
+      "balance tx";
+    align-items: start;
+    gap: 18px 24px;
+    max-width: 920px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .side-topbar { grid-area: topbar; }
+  .balance-card { grid-area: balance; }
+  .side-tx-block { grid-area: tx; min-width: 0; }
+}
+
+@media (max-width: 760px) {
+  .side-panel { padding: 20px 16px 32px; gap: 16px; }
+}
+
 /* ==========================================================================
    Transaksi view (form functionality)
    ========================================================================== */
@@ -764,7 +931,10 @@ a { color: inherit; text-decoration: none; }
   padding: 11px 18px;
   font-weight: 700;
   font-size: 13.5px;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 100ms ease;
 }
+
+.btn:active { transform: scale(0.98); }
 
 .btn-primary {
   background: var(--color-primary);
@@ -779,6 +949,8 @@ a { color: inherit; text-decoration: none; }
   border: 1px solid var(--color-border);
   color: var(--color-ink);
 }
+
+.btn-secondary:hover { background: var(--color-border-soft); border-color: var(--color-muted); }
 
 .search-row {
   display: flex;
@@ -884,10 +1056,48 @@ a { color: inherit; text-decoration: none; }
 /* ==========================================================================
    Table views (Nasabah / Kategori / Stok / Keuangan / Raport)
    ========================================================================== */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+/* Tabel dengan banyak kolom (Nasabah, Kategori) dikasih lebar minimum
+   supaya isinya tetap kebaca di HP — kalau kepotong, tinggal geser
+   ke samping lewat .table-scroll, bukan kolomnya diremukin. */
+@media (max-width: 700px) {
+  .data-table--wide { min-width: 640px; }
+
+  /* Kolom pertama (nama/kategori) dikunci di kiri saat digeser,
+     supaya user selalu tahu baris mana yang lagi dilihat. */
+  .data-table--wide th:first-child,
+  .data-table--wide td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--color-surface);
+    z-index: 1;
+    box-shadow: 1px 0 0 var(--color-border-soft);
+  }
+
+  /* Bayangan tipis di tepi kanan sebagai penanda visual bahwa
+     tabel ini masih bisa digeser ke samping. */
+  .table-scroll::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 26px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0), var(--color-surface) 92%);
+    pointer-events: none;
+  }
 }
 
 .data-table th {
@@ -1118,3 +1328,78 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.5;
   margin: 0;
 }
+
+/* ============================================================================
+   Monthly report
+   ============================================================================ */
+.report-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 310px;
+}
+
+.report-actions .text-input { margin: 0; }
+
+.report-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.report-stat {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 15px 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.report-stat span {
+  display: block;
+  color: var(--color-muted);
+  font-size: 11.5px;
+  margin-bottom: 5px;
+}
+
+.report-stat strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--color-ink);
+}
+
+.report-analysis {
+  margin: 0;
+  color: var(--color-ink-soft);
+  line-height: 1.75;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .report-toolbar { align-items: stretch; flex-direction: column; }
+  .report-actions { min-width: 0; width: 100%; }
+  .report-actions .btn { white-space: nowrap; }
+  .report-stats { grid-template-columns: 1fr 1fr; }
+}
+
+
+/* Admin actions + multi-category transaction */
+.table-actions { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+.link-btn.is-danger { color:#B04A3B; }
+.link-btn.is-danger:hover { color:#8E3327; }
+.kategori-nama-input { min-width:140px; padding:8px 10px; margin:0; }
+.multi-items { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.multi-item-row { display:grid; grid-template-columns:minmax(0,1fr) 130px auto; gap:8px; align-items:center; }
+.multi-item-row .text-input, .multi-item-row .select-input { margin:0; }
+.section-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+@media (max-width:760px) { .multi-item-row { grid-template-columns:1fr 100px; } .multi-item-row .is-danger { grid-column:1 / -1; justify-self:end; } .table-actions { flex-direction:column; align-items:flex-start; } }
