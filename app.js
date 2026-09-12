@@ -121,8 +121,22 @@ onAuthStateChanged(auth, async (user) => {
   showAppScreen();
   loadDashboard().catch((err) => {
     console.error(err);
+    const msg = `Gagal memuat data (${err.code || err.message || "unknown"}). Cek koneksi internet atau Firebase Realtime Database Rules.`;
+
     document.getElementById("lastTxList").innerHTML =
-      '<p class="empty-note">Gagal memuat data. Cek koneksi/rules Firebase.</p>';
+      `<p class="empty-note">${msg}</p>`;
+
+    // Tampilkan juga di area statistik utama supaya jelas kelihatan
+    // dashboard-nya bukan "kosong" tapi memang gagal ambil data.
+    ["statTotalNasabah", "statTotalKategori", "statTxHariIni"].forEach(
+      (id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = "!";
+      },
+    );
+
+    document.getElementById("donutLegend").innerHTML =
+      `<p class="empty-note">${msg}</p>`;
   });
 });
 
@@ -186,6 +200,18 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// Escape karakter HTML spesial supaya string dari data (nama kategori,
+// nama nasabah, dll.) aman disisipkan ke dalam template innerHTML.
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[ch]);
+}
+
 function last30Days() {
   const days = [];
 
@@ -204,15 +230,23 @@ function last30Days() {
 // ============================================================================
 
 async function fetchAllUsers() {
-  const snap = await get(child(ref(db), "users"));
-
-  return snap.exists() ? snap.val() : {};
+  try {
+    const snap = await get(child(ref(db), "users"));
+    return snap.exists() ? snap.val() : {};
+  } catch (err) {
+    console.error("Gagal membaca node 'users':", err);
+    return {};
+  }
 }
 
 async function fetchAllTransactions() {
-  const snap = await get(child(ref(db), "transactions"));
-
-  return snap.exists() ? snap.val() : {};
+  try {
+    const snap = await get(child(ref(db), "transactions"));
+    return snap.exists() ? snap.val() : {};
+  } catch (err) {
+    console.error("Gagal membaca node 'transactions':", err);
+    return {};
+  }
 }
 
 async function fetchAllWasteOut() {
@@ -228,39 +262,53 @@ async function fetchAllWasteOut() {
 }
 
 async function fetchKategori() {
-  const snap = await get(child(ref(db), "kategori"));
+  try {
+    const snap = await get(child(ref(db), "kategori"));
 
-  if (!snap.exists()) {
-    const seeded = {};
+    if (!snap.exists()) {
+      const seeded = {};
 
-    DEFAULT_KATEGORI.forEach((k) => {
-      const newKey = push(ref(db, "kategori")).key;
+      DEFAULT_KATEGORI.forEach((k) => {
+        const newKey = push(ref(db, "kategori")).key;
 
-      if (newKey) {
-        seeded[newKey] = k;
+        if (newKey) {
+          seeded[newKey] = k;
+        }
+      });
+
+      try {
+        await update(
+          ref(db),
+          Object.fromEntries(
+            Object.entries(seeded).map(([key, val]) => [
+              `kategori/${key}`,
+              val,
+            ]),
+          ),
+        );
+      } catch (err) {
+        // Gagal menulis default kategori (mis. rules cuma izinkan read) —
+        // tetap tampilkan kategori default di dashboard walau belum tersimpan.
+        console.warn("Gagal menyimpan kategori default ke Firebase:", err);
       }
-    });
 
-    await update(
-      ref(db),
-      Object.fromEntries(
-        Object.entries(seeded).map(([key, val]) => [
-          `kategori/${key}`,
-          val,
-        ]),
-      ),
-    );
+      return Object.entries(seeded).map(([key, val]) => ({
+        key,
+        ...val,
+      }));
+    }
 
-    return Object.entries(seeded).map(([key, val]) => ({
+    return Object.entries(snap.val()).map(([key, val]) => ({
       key,
       ...val,
     }));
+  } catch (err) {
+    // Node kategori gagal dibaca (mis. permission-denied di Firebase Rules).
+    // Jangan biarkan ini membuat seluruh dashboard gagal render — pakai
+    // kategori default sebagai fallback supaya UI tetap jalan.
+    console.error("Gagal membaca node 'kategori':", err);
+    return DEFAULT_KATEGORI.map((k, i) => ({ key: `local-${i}`, ...k }));
   }
-
-  return Object.entries(snap.val()).map(([key, val]) => ({
-    key,
-    ...val,
-  }));
 }
 
 // ============================================================================
@@ -2303,7 +2351,7 @@ document.getElementById("btnScan")?.addEventListener("click", () => {
 function kategoriRowHtml(selected = "", berat = "") {
   return `<div class="multi-item-row tx-item-row">
     <select class="select-input tx-kategori">
-      ${cache.kategori.map((k) => `<option value="${k.nama}" ${k.nama === selected ? "selected" : ""}>${k.nama} — ${formatRp(k.harga)}/kg</option>`).join("")}
+      ${cache.kategori.map((k) => `<option value="${escapeHtml(k.nama)}" ${k.nama === selected ? "selected" : ""}>${escapeHtml(k.nama)} — ${formatRp(k.harga)}/kg</option>`).join("")}
     </select>
     <input type="number" min="0.01" step="0.01" class="text-input tx-berat" value="${berat}" placeholder="Kg" />
     <button type="button" class="link-btn is-danger tx-remove-item" aria-label="Hapus kategori">Hapus</button>
