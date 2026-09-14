@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
+<link rel="icon" type="image/png" href="logo.png" />
+<link rel="apple-touch-icon" href="logo.png" />
 </head>
 <body>
 
@@ -15,11 +17,7 @@
 <div class="auth-shell" id="authShell">
   <div class="auth-card">
     <div class="brand-mark auth-brand-mark">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
-        <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
-        <path d="M9 12v5M15 12v5"/>
-      </svg>
+      <img src="logo.png" alt="Resik For Schooling" />
     </div>
     <h1 class="auth-title">Resik For Schooling</h1>
     <p class="auth-subtitle">Masuk ke panel admin pakai akun Google yang terdaftar.</p>
@@ -50,11 +48,7 @@
     </button>
     <div class="brand">
       <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
-          <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
-          <path d="M9 12v5M15 12v5"/>
-        </svg>
+        <img src="logo.png" alt="Resik For Schooling" />
       </div>
       <div class="brand-name">Resik<span>For Schooling</span></div>
     </div>
@@ -66,11 +60,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 8h16l-1.4 11.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8L4 8Z"/>
-          <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
-          <path d="M9 12v5M15 12v5"/>
-        </svg>
+        <img src="logo.png" alt="Resik For Schooling" />
       </div>
       <div class="brand-name">Resik<span>For Schooling</span></div>
     </div>
@@ -128,10 +118,6 @@
           <div class="main-title">Ringkasan</div>
           <div class="main-subtitle">Aktivitas bank sampah hari ini</div>
         </div>
-        <div class="search-field">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" id="dashboardSearch" placeholder="Cari nama nasabah..." />
-        </div>
       </div>
 
       <div class="stat-row">
@@ -167,7 +153,7 @@
       <div class="grid-row">
         <div class="panel">
           <div class="panel-head">
-            <span class="panel-title">Akumulasi Setoran per Kategori</span>
+            <span class="panel-title">Akumulasi Stok Sampah Saat Ini</span>
           </div>
           <div class="donut-wrap">
             <div class="donut-figure" id="donutFigure"></div>
@@ -214,6 +200,10 @@
           <div class="main-title">Nasabah</div>
           <div class="main-subtitle">Siswa, guru &amp; staff, atau masyarakat umum yang terdaftar</div>
         </div>
+        <div class="search-field">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="nasabahSearch" placeholder="Cari nama nasabah..." />
+        </div>
       </div>
 
       <div class="tx-layout" style="margin-bottom:14px">
@@ -246,7 +236,7 @@
           <div id="nasabahResultCard" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:10px">
             <p class="name" id="nasabahResultNama" style="font-weight:700;font-size:14.5px"></p>
             <div id="nasabahResultQr"></div>
-            <p class="tx-sub">UID: <span id="nasabahResultUid" style="font-family:var(--font-mono)"></span></p>
+            <p class="tx-sub">UID: <span id="nasabahResultUid" style="font-family:var(--font-mono)"></span> <button type="button" class="link-btn" id="btnCopyResultUid" title="Salin UID">Salin</button></p>
           </div>
         </div>
       </div>
@@ -372,7 +362,61 @@
           <p class="empty-note" id="txEmptyNote">Cari nasabah dulu untuk memproses transaksi.</p>
         </div>
       </div>
+
+      <div class="panel hidden" id="riwayatNasabahPanel" style="margin-top:16px">
+        <div class="panel-head">
+          <span class="panel-title">Riwayat Transaksi Nasabah Ini</span>
+        </div>
+        <p class="empty-note" style="margin-top:-6px;margin-bottom:14px">Salah input? Klik <strong>Edit</strong> untuk membetulkan, atau <strong>Hapus</strong> untuk membatalkan transaksi. Saldo nasabah otomatis disesuaikan.</p>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Tanggal</th><th>Jenis</th><th>Rincian</th><th>Nominal</th><th></th></tr>
+            </thead>
+            <tbody id="tableRiwayatNasabah"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
+
+    <!-- EDIT TRANSAKSI MODAL -->
+    <div class="modal-overlay hidden" id="editTxModal">
+      <div class="panel modal-box">
+        <div class="panel-head">
+          <span class="panel-title">Edit Transaksi</span>
+          <button type="button" class="link-btn" id="btnCloseEditTx">Tutup</button>
+        </div>
+
+        <label class="field-label" for="editTxTanggal">Tanggal</label>
+        <input type="date" id="editTxTanggal" class="text-input" style="margin-bottom:14px" />
+
+        <label class="field-label" for="editTxJenis">Jenis Transaksi</label>
+        <select id="editTxJenis" class="select-input" style="margin-bottom:14px">
+          <option value="Setor">Setor Sampah</option>
+          <option value="Tarik">Tarik Saldo</option>
+        </select>
+
+        <div id="editWrapperSampah">
+          <div class="section-row">
+            <label class="field-label" style="margin:0">Sampah yang disetor</label>
+            <button type="button" id="btnEditTambahKategori" class="link-btn">+ Tambah kategori</button>
+          </div>
+          <div id="editSetorItems" class="multi-items"></div>
+        </div>
+
+        <label class="field-label" id="editLabelInput" for="editInputJumlah" style="display:none;margin-top:14px">Nominal Penarikan (Rp)</label>
+        <input type="number" id="editInputJumlah" class="text-input" style="display:none;margin-bottom:14px" />
+
+        <div class="total-row">
+          <span class="stat-label" style="margin:0">Total Transaksi</span>
+          <span class="amount" id="editTxtTotal">Rp 0</span>
+        </div>
+
+        <p class="empty-note" id="editTxError"></p>
+
+        <button id="btnSimpanEditTx" class="btn btn-primary">Simpan Perubahan</button>
+      </div>
+    </div>
 
     <!-- STOK VIEW -->
     <section class="view" id="view-stok">
@@ -418,6 +462,20 @@
               <tr><th>Kategori</th><th>Total Terkumpul</th><th>Estimasi Nilai</th></tr>
             </thead>
             <tbody id="tableStok"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <div class="panel-head">
+          <span class="panel-title">Riwayat Pengeluaran Sampah</span>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Catatan</th><th></th></tr>
+            </thead>
+            <tbody id="tableWasteOutHistory"></tbody>
           </table>
         </div>
       </div>
@@ -498,6 +556,29 @@
           <table class="data-table">
             <thead><tr><th>Kategori</th><th>Total</th></tr></thead>
             <tbody id="monthlyCategoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel report-toolbar">
+        <div>
+          <p class="field-label">Rekap Nasabah</p>
+          <p class="empty-note" style="margin:0">Total sampah &amp; uang setiap nasabah, sepanjang waktu.</p>
+        </div>
+        <div class="report-actions">
+          <button id="btnDownloadRekapNasabah" class="btn btn-primary">Download PDF</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Nama</th><th>Kelas / Tipe</th><th>Total Sampah (kg)</th><th>Total Setoran (Rp)</th><th>Saldo Saat Ini</th></tr>
+            </thead>
+            <tbody id="tableRekapNasabah">
+              <tr class="loading-row"><td colspan="5">Memuat data…</td></tr>
+            </tbody>
           </table>
         </div>
       </div>

@@ -212,6 +212,43 @@ function escapeHtml(str) {
   })[ch]);
 }
 
+// ============================================================================
+// Salin teks (dipakai buat tombol "Salin" di UID nasabah)
+// ============================================================================
+
+async function copyToClipboard(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    // Fallback untuk browser/konteks yang tidak dukung Clipboard API
+    // (mis. dibuka lewat http biasa, bukan https).
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); } catch (_) { /* diamkan */ }
+    document.body.removeChild(ta);
+  }
+
+  if (btn) {
+    const original = btn.textContent;
+    btn.textContent = "Tersalin!";
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.disabled = false;
+    }, 1200);
+  }
+}
+
+document.getElementById("btnCopyResultUid")?.addEventListener("click", (e) => {
+  const uid = document.getElementById("nasabahResultUid")?.textContent.trim();
+  if (uid) copyToClipboard(uid, e.currentTarget);
+});
+
 function last30Days() {
   const days = [];
 
@@ -391,11 +428,11 @@ function totalBeratWasteOut(tx) {
 // Rendering: donut chart
 // ============================================================================
 
-function renderSetoranDonut(flat) {
+function renderStokDonut(flat) {
   const totals = {};
-  const dayKeys = new Set(last30Days().map(isoDate));
 
-  flat.filter((t) => dayKeys.has(t.tanggal?.slice(0, 10)))
+  // Semua setoran sepanjang waktu ditambahkan ke stok...
+  flat
     .filter((t) => t.tipe === "Setor")
     .forEach((t) => {
       getSetorItems(t).forEach((item) => {
@@ -405,14 +442,34 @@ function renderSetoranDonut(flat) {
       });
     });
 
+  // ...lalu dikurangi semua sampah yang sudah dikeluarkan ke pengepul,
+  // supaya angkanya benar-benar mencerminkan stok yang masih ada sekarang.
+  flat
+    .filter((t) => t.isWasteOut || t.tipe === "Pengeluaran Sampah")
+    .forEach((t) => {
+      getWasteOutItems(t).forEach((item) => {
+        const kategori = item.kategori || "Lainnya";
+        const berat = Number(item.berat_kg) || 0;
+        totals[kategori] = (totals[kategori] || 0) - berat;
+      });
+    });
+
+  // Kategori yang stoknya sudah habis/negatif (dikeluarkan semua) tidak perlu
+  // muncul di grafik.
+  Object.keys(totals).forEach((kategori) => {
+    if (totals[kategori] <= 0) delete totals[kategori];
+  });
+
   const entries = Object.entries(totals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6);
 
   // fraction tiap slice tetap dihitung dari total kg (bukan persentase
   // hardcoded) — cuma label yang ditampilkan diganti ke kg, bukan %.
-  const totalKg =
-    entries.reduce((sum, [, v]) => sum + v, 0) || 1;
+  const totalKg = entries.reduce((sum, [, v]) => sum + v, 0);
+  // Pembagi buat hitung persentase tiap slice — pakai fallback 1 supaya
+  // nggak dibagi nol, TAPI jangan dipakai buat teks yang ditampilkan ke user.
+  const totalKgForFraction = totalKg || 1;
 
   const size = 150;
   const stroke = 20;
@@ -423,7 +480,7 @@ function renderSetoranDonut(flat) {
 
   const segments = entries
     .map(([, value], i) => {
-      const fraction = value / totalKg;
+      const fraction = value / totalKgForFraction;
       const dash = fraction * circumference;
 
       const circle = `
@@ -458,7 +515,7 @@ function renderSetoranDonut(flat) {
 
     <div class="donut-center">
       <strong>${formatKg(totalKg)}</strong>
-      <span>Total Setoran</span>
+      <span>Stok Saat Ini</span>
     </div>
   `;
 
@@ -479,7 +536,7 @@ function renderSetoranDonut(flat) {
         `,
       )
       .join("") ||
-    '<p class="empty-note">Belum ada data setoran.</p>';
+    '<p class="empty-note">Belum ada stok sampah.</p>';
 }
 
 // ============================================================================
@@ -769,7 +826,7 @@ async function loadDashboard() {
 
   // Donut
 
-  renderSetoranDonut(flat);
+  renderStokDonut(flat);
 
   // Dark panel
 
@@ -857,7 +914,10 @@ function renderNasabahTable(users) {
                 color:var(--color-muted)
               "
             >
-              ${uid}
+              <div class="uid-cell">
+                <span class="uid-text">${uid}</span>
+                <button type="button" class="link-btn" data-copy-uid="${uid}" title="Salin UID">Salin</button>
+              </div>
             </td>
 
             <td style="font-family:var(--font-mono)">
@@ -1085,6 +1145,12 @@ document
 // ============================================================================
 
 document.getElementById("tableNasabah")?.addEventListener("click", async (e) => {
+  const copyBtn = e.target.closest("[data-copy-uid]");
+  if (copyBtn) {
+    copyToClipboard(copyBtn.dataset.copyUid, copyBtn);
+    return;
+  }
+
   const editBtn = e.target.closest("[data-edit-user]");
   const deleteBtn = e.target.closest("[data-delete-user]");
   const uid = editBtn?.dataset.editUser || deleteBtn?.dataset.deleteUser;
@@ -1474,6 +1540,65 @@ function renderStokTable(flat) {
       </tr>
     `;
 }
+
+// ============================================================================
+// Riwayat pengeluaran sampah
+// ============================================================================
+
+function wasteOutHistoryRowHtml(tx) {
+  const date = tx.tanggal ? new Date(tx.tanggal) : null;
+  const dateStr = date
+    ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+    : "-";
+
+  const rincian = getWasteOutItems(tx)
+    .map((item) => `${escapeHtml(item.kategori || "-")} ${formatKg(Number(item.berat_kg) || 0)}`)
+    .join(", ") || "-";
+
+  return `
+    <tr>
+      <td>${dateStr}</td>
+      <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
+      <td>${rincian}</td>
+      <td>${escapeHtml(tx.catatan || "-")}</td>
+      <td class="table-actions">
+        <button class="link-btn is-danger" data-delete-wasteout="${tx.txId}">Hapus</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderWasteOutHistory(flat) {
+  const rows = flat
+    .filter((t) => t.isWasteOut || t.tipe === "Pengeluaran Sampah")
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+  document.getElementById("tableWasteOutHistory").innerHTML =
+    rows.map(wasteOutHistoryRowHtml).join("") ||
+    `
+      <tr class="loading-row">
+        <td colspan="5">Belum ada pengeluaran sampah tercatat.</td>
+      </tr>
+    `;
+}
+
+document.getElementById("tableWasteOutHistory")?.addEventListener("click", async (e) => {
+  const deleteBtn = e.target.closest("[data-delete-wasteout]");
+  if (!deleteBtn) return;
+
+  const txId = deleteBtn.dataset.deleteWasteout;
+  if (!confirm("Hapus catatan pengeluaran sampah ini? Stok akan kembali seperti sebelum dikeluarkan.")) return;
+
+  try {
+    await update(ref(db), { [`waste_out/${txId}`]: null });
+    await loadDashboard();
+    renderStokTable(cache.flat);
+    renderWasteOutHistory(cache.flat);
+  } catch (err) {
+    console.error(err);
+    alert("Gagal menghapus catatan pengeluaran sampah. Cek koneksi atau rules Firebase.");
+  }
+});
 
 // ============================================================================
 // Keuangan
@@ -1930,7 +2055,166 @@ function initMonthlyReport() {
   if (!input) return;
   input.value = monthKey(new Date());
   renderMonthlyReportPreview();
+  renderNasabahRecapTable();
 }
+
+// ============================================================================
+// Rekap Nasabah (total kg & uang per nasabah, sepanjang waktu)
+// ============================================================================
+
+function getNasabahRecap(users, flat) {
+  const recap = Object.entries(users || {}).map(([uid, u]) => {
+    const txUser = flat.filter((t) => t.uid === uid && !t.isWasteOut);
+    let totalKg = 0;
+    let totalSetorRp = 0;
+    let totalTarikRp = 0;
+
+    txUser.forEach((t) => {
+      if (t.tipe === "Setor") {
+        totalKg += totalBeratTx(t);
+        totalSetorRp += totalNilaiItems(getSetorItems(t));
+      } else if (t.tipe === "Tarik") {
+        totalTarikRp += Number(t.total_rp) || 0;
+      }
+    });
+
+    return {
+      uid,
+      nama: u.nama || "-",
+      kelas: u.kelas || "-",
+      tipe: u.tipe || "Siswa",
+      totalKg,
+      totalSetorRp,
+      totalTarikRp,
+      saldo: Number(u.saldo_terakhir) || 0,
+    };
+  });
+
+  recap.sort((a, b) => b.saldo - a.saldo);
+  return recap;
+}
+
+function renderNasabahRecapTable() {
+  const body = document.getElementById("tableRekapNasabah");
+  if (!body) return;
+  const recap = getNasabahRecap(cache.users, cache.flat);
+
+  if (!recap.length) {
+    body.innerHTML = `<tr class="loading-row"><td colspan="5">Belum ada nasabah terdaftar.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = recap
+    .map(
+      (r) => `
+        <tr>
+          <td>${escapeHtml(r.nama)}</td>
+          <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
+          <td>${formatKg(r.totalKg)}</td>
+          <td style="font-family:var(--font-mono)">${formatRp(r.totalSetorRp)}</td>
+          <td style="font-family:var(--font-mono)">${formatRp(r.saldo)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function downloadNasabahRecapPdf() {
+  if (!window.jspdf?.jsPDF) {
+    alert("Library PDF belum siap. Pastikan internet aktif lalu coba lagi.");
+    return;
+  }
+
+  const recap = getNasabahRecap(cache.users, cache.flat);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const margin = 15;
+  let y = 18;
+
+  doc.setTextColor(16, 36, 27);
+  doc.setFontSize(18);
+  doc.setFont(undefined, "bold");
+  doc.text("Resik For Schooling", margin, y);
+  y += 8;
+  doc.setFontSize(13);
+  doc.text("Rekap Nasabah", margin, y);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 106);
+  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
+  y += 10;
+
+  const totalKg = recap.reduce((sum, r) => sum + r.totalKg, 0);
+  const totalSetorRp = recap.reduce((sum, r) => sum + r.totalSetorRp, 0);
+  const totalSaldo = recap.reduce((sum, r) => sum + r.saldo, 0);
+
+  const cards = [
+    ["Jumlah nasabah", String(recap.length)],
+    ["Total sampah disetor", formatKg(totalKg)],
+    ["Total nilai setoran", formatRp(totalSetorRp)],
+    ["Total saldo aktif", formatRp(totalSaldo)],
+  ];
+  const cardW = 43;
+  cards.forEach(([label, value], i) => {
+    const x = margin + i * (cardW + 3);
+    doc.setFillColor(241, 245, 241);
+    doc.roundedRect(x, y, cardW, 20, 2.5, 2.5, "F");
+    doc.setTextColor(100, 112, 106);
+    doc.setFontSize(7.5);
+    doc.text(label, x + 4, y + 7);
+    doc.setTextColor(16, 36, 27);
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold");
+    doc.text(value, x + 4, y + 15);
+    doc.setFont(undefined, "normal");
+  });
+  y += 30;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Rincian per Nasabah", margin, y);
+  y += 5;
+
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Nama", margin + 3, y + 5);
+  doc.text("Kelas / Tipe", margin + 55, y + 5);
+  doc.text("Total Kg", margin + 100, y + 5);
+  doc.text("Total Setoran", margin + 128, y + 5);
+  doc.text("Saldo", margin + 160, y + 5);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(45, 60, 53);
+
+  recap.forEach((r, i) => {
+    if (y > 275) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.setFontSize(8);
+    doc.text(String(r.nama).slice(0, 24), margin + 3, y + 5);
+    doc.text(`${r.kelas} (${r.tipe})`.slice(0, 22), margin + 55, y + 5);
+    doc.text(formatKg(r.totalKg), margin + 100, y + 5);
+    doc.text(formatRp(r.totalSetorRp), margin + 128, y + 5);
+    doc.text(formatRp(r.saldo), margin + 160, y + 5);
+    y += 7;
+  });
+
+  doc.setTextColor(120, 130, 125);
+  doc.setFontSize(7);
+  doc.text("Laporan dibuat otomatis dari data nasabah & transaksi yang tersimpan di Firebase.", margin, 287);
+  doc.save(`rekap-nasabah-${isoDate(new Date())}.pdf`);
+}
+
+document.getElementById("btnDownloadRekapNasabah")?.addEventListener("click", downloadNasabahRecapPdf);
 
 // ============================================================================
 // View navigation
@@ -1974,6 +2258,9 @@ async function showView(name) {
 
   if (name === "stok") {
     renderStokTable(
+      cache.flat,
+    );
+    renderWasteOutHistory(
       cache.flat,
     );
   }
@@ -2045,42 +2332,23 @@ document
   });
 
 // ============================================================================
-// Dashboard search
+// Cari nasabah (di halaman Nasabah, filter tabel langsung saat mengetik)
 // ============================================================================
 
 document
-  .getElementById("dashboardSearch")
-  .addEventListener(
-    "keydown",
-    (e) => {
-      if (e.key !== "Enter") {
-        return;
-      }
+  .getElementById("nasabahSearch")
+  ?.addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
 
-      const q =
-        e.target.value
-          .trim()
-          .toLowerCase();
-
-      showView("nasabah").then(
-        () => {
-          document
-            .querySelectorAll(
-              "#tableNasabah tr",
-            )
-            .forEach((row) => {
-              row.style.display =
-                !q ||
-                row.textContent
-                  .toLowerCase()
-                  .includes(q)
-                  ? ""
-                  : "none";
-            });
-        },
-      );
-    },
-  );
+    document
+      .querySelectorAll("#tableNasabah tr")
+      .forEach((row) => {
+        row.style.display =
+          !q || row.textContent.toLowerCase().includes(q)
+            ? ""
+            : "none";
+      });
+  });
 
 // ============================================================================
 // Pengeluaran sampah — sampah fisik keluar untuk ditimbang/dijual di luar
@@ -2199,6 +2467,8 @@ function initWasteOutForm() {
       resetWasteOutItems();
       kalkulasiWasteOut();
       await loadDashboard();
+      renderStokTable(cache.flat);
+      renderWasteOutHistory(cache.flat);
     } catch (err) {
       console.error(err);
       alert("Gagal menyimpan pengeluaran sampah. Cek koneksi atau rules Firebase.");
@@ -2303,6 +2573,14 @@ async function cariNasabah(uid) {
       readerEl.classList.add("is-hidden");
     }
     kalkulasi();
+
+    // Sinkronkan cache transaksi & saldo nasabah ini supaya riwayat serta
+    // saldo yang ditampilkan selalu terbaru setelah tambah/edit/hapus.
+    if (cache.users) cache.users[uid] = currentNasabahData;
+    if (!cache.transactions) cache.transactions = {};
+    const txSnap = await get(child(ref(db), `transactions/${uid}`));
+    cache.transactions[uid] = txSnap.exists() ? txSnap.val() : {};
+    renderRiwayatNasabah(uid);
   } catch (err) {
     console.error(err);
     alert("Gagal koneksi ke database. Pastikan rules database sudah benar.");
@@ -2363,7 +2641,7 @@ function resetSetorItems() {
 }
 
 function getCurrentSetorItems() {
-  return [...document.querySelectorAll(".tx-item-row")].map((row) => {
+  return [...setorItemsEl.querySelectorAll(".tx-item-row")].map((row) => {
     const kategori = row.querySelector(".tx-kategori")?.value || "";
     const berat = parseFloat(row.querySelector(".tx-berat")?.value) || 0;
     const harga = hargaKategoriOf(kategori);
@@ -2533,6 +2811,297 @@ document
       }
     },
   );
+
+// ============================================================================
+// Riwayat transaksi nasabah (edit & hapus)
+// ----------------------------------------------------------------------------
+// Ditampilkan di bawah form "Proses Transaksi", setelah admin cari/scan
+// seorang nasabah. Dipisah dari "Riwayat Pengeluaran Sampah" karena tiap
+// transaksi di sini punya efek ke saldo_terakhir nasabah, jadi edit/hapus
+// wajib ikut menyesuaikan saldo — bukan cuma hapus/ubah datanya saja.
+// ============================================================================
+
+const riwayatNasabahPanel = document.getElementById("riwayatNasabahPanel");
+const tableRiwayatNasabah = document.getElementById("tableRiwayatNasabah");
+
+// Dampak sebuah transaksi terhadap saldo_terakhir nasabah saat dicatat:
+// Setor menambah saldo, Tarik mengurangi saldo. Dipakai untuk membalikkan
+// efek lama (saat edit/hapus) sebelum menerapkan efek yang baru.
+function saldoEffectOf(tx) {
+  const amount = Number(tx.total_rp) || 0;
+  return tx.tipe === "Setor" ? amount : -amount;
+}
+
+function riwayatNasabahRowHtml(tx) {
+  const isSetor = tx.tipe === "Setor";
+
+  const date = tx.tanggal ? new Date(tx.tanggal) : null;
+  const dateStr = date
+    ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+    : "-";
+
+  const rincian = isSetor
+    ? getSetorItems(tx)
+        .map((item) => `${escapeHtml(item.kategori || "-")} ${formatKg(Number(item.berat_kg) || 0)}`)
+        .join(", ") || "-"
+    : "Penarikan saldo";
+
+  return `
+    <tr>
+      <td>${dateStr}</td>
+      <td>${isSetor ? "Setor" : "Tarik"}</td>
+      <td>${rincian}</td>
+      <td class="tx-amount ${isSetor ? "is-in" : "is-out"}">${isSetor ? "+" : "-"} ${formatRp(tx.total_rp)}</td>
+      <td class="table-actions">
+        <button class="link-btn" data-edit-tx="${tx.txId}">Edit</button>
+        <button class="link-btn is-danger" data-delete-tx="${tx.txId}">Hapus</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderRiwayatNasabah(uid) {
+  const txMap = cache.transactions?.[uid] || {};
+
+  const rows = Object.entries(txMap)
+    .map(([txId, tx]) => ({ ...tx, uid, txId }))
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+  tableRiwayatNasabah.innerHTML =
+    rows.map(riwayatNasabahRowHtml).join("") ||
+    `<tr class="loading-row"><td colspan="5">Belum ada transaksi untuk nasabah ini.</td></tr>`;
+
+  riwayatNasabahPanel?.classList.remove("hidden");
+}
+
+// ----------------------------------------------------------------------------
+// Hapus transaksi
+// ----------------------------------------------------------------------------
+
+async function hapusTransaksiNasabah(uid, txId) {
+  const tx = cache.transactions?.[uid]?.[txId];
+  if (!tx) return;
+
+  const user = cache.users?.[uid];
+  const saldoSekarang = user?.saldo_terakhir || 0;
+  const saldoBaru = saldoSekarang - saldoEffectOf(tx);
+
+  let confirmMsg = `Hapus transaksi ${tx.tipe === "Setor" ? "setor" : "tarik"} sebesar ${formatRp(tx.total_rp)} ini? Saldo nasabah akan disesuaikan otomatis.`;
+  if (saldoBaru < 0) {
+    confirmMsg += `\n\nPerhatian: setelah dihapus, saldo nasabah akan menjadi minus (${formatRp(saldoBaru)}). Lanjutkan?`;
+  }
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    const updates = {};
+    updates[`users/${uid}/saldo_terakhir`] = saldoBaru;
+    updates[`transactions/${uid}/${txId}`] = null;
+
+    await update(ref(db), updates);
+
+    if (currentUID === uid) await cariNasabah(uid);
+    await loadDashboard();
+  } catch (err) {
+    console.error(err);
+    alert("Gagal menghapus transaksi. Cek koneksi atau rules Firebase.");
+  }
+}
+
+tableRiwayatNasabah?.addEventListener("click", (e) => {
+  const deleteBtn = e.target.closest("[data-delete-tx]");
+  const editBtn = e.target.closest("[data-edit-tx]");
+
+  if (deleteBtn) {
+    hapusTransaksiNasabah(currentUID, deleteBtn.dataset.deleteTx);
+    return;
+  }
+
+  if (editBtn) {
+    openEditTxModal(currentUID, editBtn.dataset.editTx);
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Edit transaksi (modal)
+// ----------------------------------------------------------------------------
+
+const editTxModal = document.getElementById("editTxModal");
+const editTxTanggal = document.getElementById("editTxTanggal");
+const editTxJenis = document.getElementById("editTxJenis");
+const editWrapperSampah = document.getElementById("editWrapperSampah");
+const editSetorItemsEl = document.getElementById("editSetorItems");
+const editInputJumlah = document.getElementById("editInputJumlah");
+const editLabelInput = document.getElementById("editLabelInput");
+const editTxtTotal = document.getElementById("editTxtTotal");
+const editTxError = document.getElementById("editTxError");
+
+let editingUID = null;
+let editingTxId = null;
+let editingFinalAmount = 0;
+
+function resetEditSetorItems(items) {
+  if (!items || !items.length) {
+    editSetorItemsEl.innerHTML = kategoriRowHtml();
+    return;
+  }
+  editSetorItemsEl.innerHTML = items
+    .map((item) => kategoriRowHtml(item.kategori, item.berat_kg))
+    .join("");
+}
+
+function getEditSetorItems() {
+  return [...editSetorItemsEl.querySelectorAll(".tx-item-row")].map((row) => {
+    const kategori = row.querySelector(".tx-kategori")?.value || "";
+    const berat = parseFloat(row.querySelector(".tx-berat")?.value) || 0;
+    const harga = hargaKategoriOf(kategori);
+    return { kategori, berat_kg: berat, harga_per_kg: harga, total_rp: berat * harga };
+  }).filter((item) => item.kategori && item.berat_kg > 0);
+}
+
+function editKalkulasi() {
+  if (editTxJenis.value === "Setor") {
+    editingFinalAmount = totalNilaiItems(getEditSetorItems());
+  } else {
+    editingFinalAmount = parseFloat(editInputJumlah.value) || 0;
+  }
+  editTxtTotal.textContent = formatRp(editingFinalAmount);
+}
+
+editSetorItemsEl?.addEventListener("input", editKalkulasi);
+editSetorItemsEl?.addEventListener("change", editKalkulasi);
+editSetorItemsEl?.addEventListener("click", (e) => {
+  const removeBtn = e.target.closest(".tx-remove-item");
+  if (!removeBtn) return;
+  const rows = editSetorItemsEl.querySelectorAll(".tx-item-row");
+  if (rows.length <= 1) {
+    const weightInput = removeBtn.closest(".tx-item-row")?.querySelector(".tx-berat");
+    if (weightInput) weightInput.value = "";
+  } else {
+    removeBtn.closest(".tx-item-row")?.remove();
+  }
+  editKalkulasi();
+});
+
+document.getElementById("btnEditTambahKategori")?.addEventListener("click", () => {
+  editSetorItemsEl.insertAdjacentHTML("beforeend", kategoriRowHtml());
+});
+
+editInputJumlah?.addEventListener("input", editKalkulasi);
+
+editTxJenis?.addEventListener("change", (e) => {
+  const isSetor = e.target.value === "Setor";
+  editWrapperSampah.style.display = isSetor ? "block" : "none";
+  editInputJumlah.style.display = isSetor ? "none" : "block";
+  editLabelInput.style.display = isSetor ? "none" : "block";
+  editKalkulasi();
+});
+
+function openEditTxModal(uid, txId) {
+  const tx = cache.transactions?.[uid]?.[txId];
+  if (!tx) return;
+
+  editingUID = uid;
+  editingTxId = txId;
+  editTxError.textContent = "";
+
+  const isSetor = tx.tipe === "Setor";
+  editTxJenis.value = isSetor ? "Setor" : "Tarik";
+  editWrapperSampah.style.display = isSetor ? "block" : "none";
+  editInputJumlah.style.display = isSetor ? "none" : "block";
+  editLabelInput.style.display = isSetor ? "none" : "block";
+
+  const date = tx.tanggal ? new Date(tx.tanggal) : new Date();
+  editTxTanggal.value = isoDate(date);
+
+  if (isSetor) {
+    resetEditSetorItems(getSetorItems(tx));
+  } else {
+    editInputJumlah.value = tx.total_rp || "";
+  }
+
+  editKalkulasi();
+  editTxModal.classList.remove("hidden");
+}
+
+function closeEditTxModal() {
+  editTxModal.classList.add("hidden");
+  editingUID = null;
+  editingTxId = null;
+}
+
+document.getElementById("btnCloseEditTx")?.addEventListener("click", closeEditTxModal);
+editTxModal?.addEventListener("click", (e) => {
+  if (e.target === editTxModal) closeEditTxModal();
+});
+
+document.getElementById("btnSimpanEditTx")?.addEventListener("click", async () => {
+  if (!editingUID || !editingTxId) return;
+
+  const oldTx = cache.transactions?.[editingUID]?.[editingTxId];
+  if (!oldTx) return;
+
+  editTxError.textContent = "";
+
+  if (editingFinalAmount <= 0) {
+    editTxError.textContent = "Nominal transaksi tidak boleh 0.";
+    return;
+  }
+
+  const isSetor = editTxJenis.value === "Setor";
+  let items = [];
+
+  if (isSetor) {
+    items = getEditSetorItems();
+    if (!items.length) {
+      editTxError.textContent = "Tambahkan minimal satu kategori dan berat sampah.";
+      return;
+    }
+  }
+
+  const user = cache.users?.[editingUID];
+  const saldoSekarang = user?.saldo_terakhir || 0;
+
+  const newTxnData = {
+    ...oldTx,
+    tipe: isSetor ? "Setor" : "Tarik",
+    total_rp: editingFinalAmount,
+    tanggal: new Date(`${editTxTanggal.value}T00:00:00`).toISOString(),
+  };
+
+  if (isSetor) {
+    newTxnData.items = items;
+    newTxnData.kategori = items.length === 1 ? items[0].kategori : "Multi-kategori";
+    newTxnData.berat_kg = items.reduce((sum, item) => sum + item.berat_kg, 0);
+  } else {
+    delete newTxnData.items;
+    delete newTxnData.kategori;
+    delete newTxnData.berat_kg;
+  }
+
+  // Balikkan dulu efek transaksi lama ke saldo, baru terapkan efek yang baru
+  // — supaya saldo tetap konsisten walau jenis transaksinya ikut diubah.
+  const saldoBaru = saldoSekarang - saldoEffectOf(oldTx) + saldoEffectOf(newTxnData);
+
+  if (saldoBaru < 0 && !confirm(`Perubahan ini akan membuat saldo nasabah menjadi minus (${formatRp(saldoBaru)}). Tetap simpan?`)) {
+    return;
+  }
+
+  try {
+    const updates = {};
+    updates[`users/${editingUID}/saldo_terakhir`] = saldoBaru;
+    updates[`transactions/${editingUID}/${editingTxId}`] = newTxnData;
+
+    await update(ref(db), updates);
+
+    closeEditTxModal();
+
+    if (currentUID === editingUID) await cariNasabah(editingUID);
+    await loadDashboard();
+  } catch (err) {
+    console.error(err);
+    editTxError.textContent = "Gagal menyimpan perubahan. Cek koneksi atau rules Firebase.";
+  }
+});
 
 // ============================================================================
 // Boot
