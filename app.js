@@ -1,5 +1,5 @@
 // ============================================================================
-// Resik For Schooling — Admin Dashboard
+// Resik For School — Admin Dashboard
 // Firebase Realtime Database (REST via modular SDK) + rendering logic
 // ============================================================================
 
@@ -1957,7 +1957,7 @@ async function downloadMonthlyPdf() {
   doc.setTextColor(16, 36, 27);
   doc.setFontSize(18);
   doc.setFont(undefined, "bold");
-  doc.text("Resik For Schooling", margin, y);
+  doc.text("Resik For School", margin, y);
   y += 8;
   doc.setFontSize(13);
   doc.text(`Rekapan Bulanan — ${data.label}`, margin, y);
@@ -2068,15 +2068,35 @@ function getNasabahRecap(users, flat) {
     let totalKg = 0;
     let totalSetorRp = 0;
     let totalTarikRp = 0;
+    // Rincian per kategori: berapa kg & berapa Rp yang disetor nasabah ini
+    // di tiap kategori sampah, sepanjang waktu — dipakai buat detail di
+    // tabel & PDF rekap nasabah.
+    const kategoriMap = {};
 
     txUser.forEach((t) => {
       if (t.tipe === "Setor") {
         totalKg += totalBeratTx(t);
-        totalSetorRp += totalNilaiItems(getSetorItems(t));
+        const items = getSetorItems(t);
+        totalSetorRp += totalNilaiItems(items);
+        items.forEach((item) => {
+          const kategori = item.kategori || "Lainnya";
+          const berat = Number(item.berat_kg) || 0;
+          const nilai =
+            berat * (Number(item.harga_per_kg) || hargaKategoriOf(item.kategori));
+          if (!kategoriMap[kategori]) {
+            kategoriMap[kategori] = { kategori, kg: 0, rp: 0 };
+          }
+          kategoriMap[kategori].kg += berat;
+          kategoriMap[kategori].rp += nilai;
+        });
       } else if (t.tipe === "Tarik") {
         totalTarikRp += Number(t.total_rp) || 0;
       }
     });
+
+    const kategoriBreakdown = Object.values(kategoriMap).sort(
+      (a, b) => b.kg - a.kg,
+    );
 
     return {
       uid,
@@ -2087,11 +2107,35 @@ function getNasabahRecap(users, flat) {
       totalSetorRp,
       totalTarikRp,
       saldo: Number(u.saldo_terakhir) || 0,
+      kategoriBreakdown,
     };
   });
 
   recap.sort((a, b) => b.saldo - a.saldo);
   return recap;
+}
+
+// Baris rincian kategori yang muncul di bawah baris nasabah waktu di-klik
+// "Detail" — nampilin disetor apa aja & berapa kg di masing-masing kategori.
+function renderKategoriBreakdownCell(breakdown) {
+  if (!breakdown.length) {
+    return `<span class="empty-note" style="margin:0">Belum ada setoran.</span>`;
+  }
+  return `
+    <div class="recap-breakdown">
+      ${breakdown
+        .map(
+          (b) => `
+            <div class="recap-breakdown-item">
+              <span class="recap-breakdown-kategori">${escapeHtml(b.kategori)}</span>
+              <span class="recap-breakdown-kg">${formatKg(b.kg)}</span>
+              <span class="recap-breakdown-rp">${formatRp(b.rp)}</span>
+            </div>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
 }
 
 function renderNasabahRecapTable() {
@@ -2100,24 +2144,46 @@ function renderNasabahRecapTable() {
   const recap = getNasabahRecap(cache.users, cache.flat);
 
   if (!recap.length) {
-    body.innerHTML = `<tr class="loading-row"><td colspan="5">Belum ada nasabah terdaftar.</td></tr>`;
+    body.innerHTML = `<tr class="loading-row"><td colspan="6">Belum ada nasabah terdaftar.</td></tr>`;
     return;
   }
 
   body.innerHTML = recap
     .map(
-      (r) => `
-        <tr>
+      (r, i) => `
+        <tr class="recap-row" data-recap-toggle="${i}">
           <td>${escapeHtml(r.nama)}</td>
           <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
           <td>${formatKg(r.totalKg)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(r.totalSetorRp)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(r.saldo)}</td>
+          <td>
+            <button type="button" class="link-btn" data-recap-toggle-btn="${i}">Detail ▾</button>
+          </td>
+        </tr>
+        <tr class="recap-detail-row hidden" id="recapDetail${i}">
+          <td colspan="6">
+            <p class="field-label" style="margin:0 0 8px">Rincian setoran per kategori</p>
+            ${renderKategoriBreakdownCell(r.kategoriBreakdown)}
+          </td>
         </tr>
       `,
     )
     .join("");
 }
+
+// Toggle buka/tutup baris detail kategori per nasabah (event delegation
+// karena isi tabel di-render ulang tiap kali ada perubahan data).
+document.getElementById("tableRekapNasabah")?.addEventListener("click", (e) => {
+  const trigger = e.target.closest("[data-recap-toggle-btn]");
+  if (!trigger) return;
+  const idx = trigger.dataset.recapToggleBtn;
+  const detailRow = document.getElementById(`recapDetail${idx}`);
+  if (!detailRow) return;
+  const isHidden = detailRow.classList.contains("hidden");
+  detailRow.classList.toggle("hidden", !isHidden);
+  trigger.textContent = isHidden ? "Detail ▴" : "Detail ▾";
+});
 
 function downloadNasabahRecapPdf() {
   if (!window.jspdf?.jsPDF) {
@@ -2134,7 +2200,7 @@ function downloadNasabahRecapPdf() {
   doc.setTextColor(16, 36, 27);
   doc.setFontSize(18);
   doc.setFont(undefined, "bold");
-  doc.text("Resik For Schooling", margin, y);
+  doc.text("Resik For School", margin, y);
   y += 8;
   doc.setFontSize(13);
   doc.text("Rekap Nasabah", margin, y);
@@ -2191,21 +2257,41 @@ function downloadNasabahRecapPdf() {
   doc.setTextColor(45, 60, 53);
 
   recap.forEach((r, i) => {
-    if (y > 275) {
+    // Rincian per kategori (setor apa aja & berapa kg/Rp) dicetak sebagai
+    // baris kecil di bawah baris utama nasabah, dibungkus otomatis kalau
+    // kepanjangan supaya gak kepotong.
+    const breakdownText = r.kategoriBreakdown.length
+      ? r.kategoriBreakdown
+          .map((b) => `${b.kategori} ${formatKg(b.kg)} (${formatRp(b.rp)})`)
+          .join("   •   ")
+      : "Belum ada setoran";
+    const wrapped = doc.splitTextToSize(`Rincian: ${breakdownText}`, 174);
+    const rowHeight = 7 + wrapped.length * 4;
+
+    if (y + rowHeight > 280) {
       doc.addPage();
       y = 18;
     }
     if (i % 2 === 0) {
       doc.setFillColor(247, 249, 247);
-      doc.rect(margin, y, 180, 7, "F");
+      doc.rect(margin, y, 180, rowHeight, "F");
     }
     doc.setFontSize(8);
+    doc.setTextColor(45, 60, 53);
     doc.text(String(r.nama).slice(0, 24), margin + 3, y + 5);
     doc.text(`${r.kelas} (${r.tipe})`.slice(0, 22), margin + 55, y + 5);
     doc.text(formatKg(r.totalKg), margin + 100, y + 5);
     doc.text(formatRp(r.totalSetorRp), margin + 128, y + 5);
     doc.text(formatRp(r.saldo), margin + 160, y + 5);
-    y += 7;
+
+    doc.setFontSize(6.7);
+    doc.setTextColor(100, 112, 106);
+    wrapped.forEach((line, li) => {
+      doc.text(line, margin + 3, y + 5 + 4.2 * (li + 1));
+    });
+    doc.setTextColor(45, 60, 53);
+
+    y += rowHeight;
   });
 
   doc.setTextColor(120, 130, 125);
