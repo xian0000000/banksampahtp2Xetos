@@ -237,6 +237,7 @@
             <p class="name" id="nasabahResultNama" style="font-weight:700;font-size:14.5px"></p>
             <div id="nasabahResultQr"></div>
             <p class="tx-sub">UID: <span id="nasabahResultUid" style="font-family:var(--font-mono)"></span> <button type="button" class="link-btn" id="btnCopyResultUid" title="Salin UID">Salin</button></p>
+            <p class="empty-note" style="margin:0">Tunjukkan QR ini ke nasabah. PIN transaksi belum ada — nasabah akan diminta membuat PIN sendiri (6 digit) saat pertama kali login di aplikasi mobile.</p>
           </div>
         </div>
       </div>
@@ -245,7 +246,7 @@
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Nama</th><th>Tipe</th><th>Kelas / Unit</th><th>Email Login</th><th>UID</th><th>Saldo</th><th>Aksi</th></tr>
+              <tr><th>Nama</th><th>Tipe</th><th>Kelas / Unit</th><th>Email Login</th><th>UID</th><th>PIN</th><th>Saldo</th><th>Aksi</th></tr>
             </thead>
             <tbody id="tableNasabah">
               <tr class="loading-row"><td colspan="5">Memuat data…</td></tr>
@@ -324,6 +325,13 @@
             <p class="name" id="txtNama">–</p>
             <p class="stat-label" style="margin:0">Saldo saat ini</p>
             <p class="balance" id="txtSaldo">Rp 0</p>
+            <div class="pin-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border,#e3e9e7)">
+              <div>
+                <p class="stat-label" style="margin:0">PIN transaksi</p>
+                <p class="balance" id="txtPin" style="font-size:16px;letter-spacing:3px">Belum diatur</p>
+              </div>
+              <button type="button" id="btnUbahPin" class="link-btn">Reset PIN</button>
+            </div>
           </div>
         </div>
 
@@ -351,6 +359,9 @@
 
             <label class="field-label" id="labelInput" for="inputJumlah" style="display:none">Nominal Penarikan (Rp)</label>
             <input type="number" id="inputJumlah" class="text-input" placeholder="Misal: 10000" style="margin-bottom:14px;display:none" />
+
+            <label class="field-label" id="labelPinTarik" for="inputPinTarik" style="display:none">PIN Nasabah (6 digit)</label>
+            <input type="password" inputmode="numeric" maxlength="6" id="inputPinTarik" class="text-input" placeholder="••••••" style="margin-bottom:14px;display:none;letter-spacing:4px" />
 
             <div class="total-row">
               <span class="stat-label" style="margin:0">Total Transaksi</span>
@@ -466,14 +477,19 @@
         </div>
       </div>
 
-      <div class="panel" style="margin-top:16px">
-        <div class="panel-head">
-          <span class="panel-title">Riwayat Pengeluaran Sampah</span>
+      <div class="panel report-toolbar" style="margin-top:16px">
+        <div>
+          <p class="field-label">Riwayat Pengeluaran Sampah</p>
+          <p class="empty-note" style="margin:0" id="wasteOutHistorySummary">Memuat riwayat…</p>
+          <p class="empty-note" style="margin:4px 0 0">Unduh PDF per transaksi lewat tombol di setiap baris. Rekap bulanan lengkap ada di menu <strong>Raport</strong>.</p>
         </div>
+      </div>
+
+      <div class="panel">
         <div class="table-scroll">
-          <table class="data-table">
+          <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Catatan</th><th></th></tr>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Total Berat</th><th>Estimasi Nilai</th><th>Catatan</th><th></th></tr>
             </thead>
             <tbody id="tableWasteOutHistory"></tbody>
           </table>
@@ -556,6 +572,19 @@
           <table class="data-table">
             <thead><tr><th>Kategori</th><th>Total</th></tr></thead>
             <tbody id="monthlyCategoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Pengeluaran Sampah Bulan Ini</span></div>
+        <p class="empty-note" id="monthlyWasteOutSummary" style="margin-top:-6px">Memuat…</p>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Total Berat</th><th>Estimasi Nilai</th><th>Catatan</th></tr>
+            </thead>
+            <tbody id="monthlyWasteOutBody"></tbody>
           </table>
         </div>
       </div>

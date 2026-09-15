@@ -200,6 +200,20 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// PIN transaksi 6 digit — sengaja disimpan apa adanya (bukan di-hash) di
+// RTDB. Ini trade-off keamanan yang disengaja untuk kemudahan operasional
+// bank sampah sekolah; jangan dipakai buat kasus yang butuh proteksi lebih
+// ketat.
+//
+// PIN TIDAK PERNAH dibuat/diketahui admin lagi — nasabah wajib atur
+// sendiri lewat aplikasi mobile (lihat SetupPinPage di lib/main.dart).
+// Satu-satunya hal yang admin bisa lakukan dari sini adalah RESET (kosongkan
+// lagi) kalau nasabah lupa PIN, supaya nasabah diminta atur PIN baru saat
+// login berikutnya.
+function isValidPin(pin) {
+  return /^\d{6}$/.test(String(pin || ""));
+}
+
 // Escape karakter HTML spesial supaya string dari data (nama kategori,
 // nama nasabah, dll.) aman disisipkan ke dalam template innerHTML.
 function escapeHtml(str) {
@@ -920,6 +934,17 @@ function renderNasabahTable(users) {
               </div>
             </td>
 
+            <td style="font-family:var(--font-mono);letter-spacing:2px">
+              <div class="uid-cell">
+                <span class="uid-text">${u.pin ? "Sudah diatur" : "Belum diatur"}</span>
+                ${
+                  u.pin
+                    ? `<button type="button" class="link-btn" data-reset-pin="${uid}" title="Reset PIN — nasabah atur ulang lewat mobile">Reset</button>`
+                    : ""
+                }
+              </div>
+            </td>
+
             <td style="font-family:var(--font-mono)">
               ${formatRp(u.saldo_terakhir || 0)}
             </td>
@@ -933,11 +958,37 @@ function renderNasabahTable(users) {
       .join("") ||
     `
       <tr class="loading-row">
-        <td colspan="7">
+        <td colspan="8">
           Belum ada nasabah terdaftar.
         </td>
       </tr>
     `;
+}
+
+async function resetPinNasabah(uid) {
+  const user = cache.users?.[uid];
+  if (!user) return;
+  if (!user.pin) {
+    alert("Nasabah ini belum atur PIN sama sekali — belum ada yang perlu direset.");
+    return;
+  }
+  const confirmReset = confirm(
+    "Reset PIN transaksi nasabah ini? Nasabah harus membuat PIN baru sendiri lewat aplikasi mobile saat login berikutnya.",
+  );
+  if (!confirmReset) return;
+  try {
+    await update(ref(db), { [`users/${uid}/pin`]: null });
+    if (cache.users[uid]) delete cache.users[uid].pin;
+    if (currentUID === uid && currentNasabahData) {
+      delete currentNasabahData.pin;
+      const txtPinEl = document.getElementById("txtPin");
+      if (txtPinEl) txtPinEl.textContent = "Belum diatur";
+    }
+    renderNasabahTable(cache.users);
+  } catch (err) {
+    console.error(err);
+    alert("Gagal mereset PIN. Cek koneksi atau rules Firebase.");
+  }
 }
 
 // ============================================================================
@@ -1070,6 +1121,10 @@ document
         return;
       }
 
+      // PIN transaksi SENGAJA tidak dibuatkan di sini lagi — nasabah wajib
+      // atur PIN-nya sendiri (6 digit) lewat aplikasi mobile begitu login
+      // pertama kali. `pin` dibiarkan kosong sampai nasabah mengisinya
+      // sendiri (lihat SetupPinPage & _PinGate di lib/main.dart).
       const updates = {};
       updates[`users/${newUid}`] = {
         nama,
@@ -1148,6 +1203,12 @@ document.getElementById("tableNasabah")?.addEventListener("click", async (e) => 
   const copyBtn = e.target.closest("[data-copy-uid]");
   if (copyBtn) {
     copyToClipboard(copyBtn.dataset.copyUid, copyBtn);
+    return;
+  }
+
+  const resetPinBtn = e.target.closest("[data-reset-pin]");
+  if (resetPinBtn) {
+    resetPinNasabah(resetPinBtn.dataset.resetPin);
     return;
   }
 
@@ -1545,44 +1606,113 @@ function renderStokTable(flat) {
 // Riwayat pengeluaran sampah
 // ============================================================================
 
+// Rincian per-kategori (berat & estimasi nilai) untuk satu transaksi
+// pengeluaran sampah — dipakai di tabel riwayat maupun PDF supaya
+// datanya konsisten di kedua tempat.
+function wasteOutItemDetails(tx) {
+  return getWasteOutItems(tx).map((item) => {
+    const kg = Number(item.berat_kg) || 0;
+    const harga = hargaKategoriOf(item.kategori);
+    return {
+      kategori: item.kategori || "Lainnya",
+      kg,
+      nilai: kg * harga,
+    };
+  });
+}
+
 function wasteOutHistoryRowHtml(tx) {
   const date = tx.tanggal ? new Date(tx.tanggal) : null;
   const dateStr = date
     ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
     : "-";
 
-  const rincian = getWasteOutItems(tx)
-    .map((item) => `${escapeHtml(item.kategori || "-")} ${formatKg(Number(item.berat_kg) || 0)}`)
+  const details = wasteOutItemDetails(tx);
+  const rincian = details
+    .map((d) => `${escapeHtml(d.kategori)} ${formatKg(d.kg)}`)
     .join(", ") || "-";
+  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
+  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
 
   return `
     <tr>
       <td>${dateStr}</td>
       <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
       <td>${rincian}</td>
+      <td>${formatKg(totalKg)}</td>
+      <td>${formatRp(totalNilai)}</td>
       <td>${escapeHtml(tx.catatan || "-")}</td>
       <td class="table-actions">
+        <button class="link-btn" data-download-wasteout="${tx.txId}">Download PDF</button>
         <button class="link-btn is-danger" data-delete-wasteout="${tx.txId}">Hapus</button>
       </td>
     </tr>
   `;
 }
 
-function renderWasteOutHistory(flat) {
-  const rows = flat
+// Versi tanpa kolom aksi (Download/Hapus) — dipakai di panel "Pengeluaran
+// Sampah Bulan Ini" pada menu Raport, karena baris di situ cuma buat
+// dilihat, bukan diedit/dihapus (edit/hapus tetap lewat menu Stok).
+function wasteOutHistoryRowHtmlNoActions(tx) {
+  const date = tx.tanggal ? new Date(tx.tanggal) : null;
+  const dateStr = date
+    ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+    : "-";
+
+  const details = wasteOutItemDetails(tx);
+  const rincian = details
+    .map((d) => `${escapeHtml(d.kategori)} ${formatKg(d.kg)}`)
+    .join(", ") || "-";
+  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
+  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+
+  return `
+    <tr>
+      <td>${dateStr}</td>
+      <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
+      <td>${rincian}</td>
+      <td>${formatKg(totalKg)}</td>
+      <td>${formatRp(totalNilai)}</td>
+      <td>${escapeHtml(tx.catatan || "-")}</td>
+    </tr>
+  `;
+}
+
+function getWasteOutHistoryRows(flat) {
+  return flat
     .filter((t) => t.isWasteOut || t.tipe === "Pengeluaran Sampah")
     .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+}
+
+function renderWasteOutHistory(flat) {
+  const rows = getWasteOutHistoryRows(flat);
 
   document.getElementById("tableWasteOutHistory").innerHTML =
     rows.map(wasteOutHistoryRowHtml).join("") ||
     `
       <tr class="loading-row">
-        <td colspan="5">Belum ada pengeluaran sampah tercatat.</td>
+        <td colspan="7">Belum ada pengeluaran sampah tercatat.</td>
       </tr>
     `;
+
+  const summaryEl = document.getElementById("wasteOutHistorySummary");
+  if (summaryEl) {
+    const totalKg = rows.reduce((sum, tx) => sum + totalBeratWasteOut(tx), 0);
+    summaryEl.textContent = rows.length
+      ? `${rows.length} catatan pengeluaran • total ${formatKg(totalKg)} dikeluarkan sepanjang waktu.`
+      : "Belum ada pengeluaran sampah tercatat.";
+  }
 }
 
 document.getElementById("tableWasteOutHistory")?.addEventListener("click", async (e) => {
+  const downloadBtn = e.target.closest("[data-download-wasteout]");
+  if (downloadBtn) {
+    const txId = downloadBtn.dataset.downloadWasteout;
+    const tx = getWasteOutHistoryRows(cache.flat).find((t) => t.txId === txId);
+    if (tx) downloadWasteOutTransactionPdf(tx);
+    return;
+  }
+
   const deleteBtn = e.target.closest("[data-delete-wasteout]");
   if (!deleteBtn) return;
 
@@ -1599,6 +1729,118 @@ document.getElementById("tableWasteOutHistory")?.addEventListener("click", async
     alert("Gagal menghapus catatan pengeluaran sampah. Cek koneksi atau rules Firebase.");
   }
 });
+
+// PDF satu transaksi pengeluaran sampah saja — bukan dump semua riwayat.
+// Rekap gabungan sebulan penuh ada di menu Raport (lihat downloadMonthlyPdf
+// dan panel "Pengeluaran Sampah Bulan Ini").
+function downloadWasteOutTransactionPdf(tx) {
+  if (!window.jspdf?.jsPDF) {
+    alert("Library PDF belum siap. Pastikan internet aktif lalu coba lagi.");
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const margin = 15;
+  let y = 18;
+
+  const date = tx.tanggal ? new Date(tx.tanggal) : null;
+  const dateStr = date
+    ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+    : "-";
+  const details = wasteOutItemDetails(tx);
+  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
+  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+
+  doc.setTextColor(16, 36, 27);
+  doc.setFontSize(18);
+  doc.setFont(undefined, "bold");
+  doc.text("Resik For School", margin, y);
+  y += 8;
+  doc.setFontSize(13);
+  doc.text("Bukti Pengeluaran Sampah", margin, y);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 106);
+  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
+  y += 10;
+
+  const cards = [
+    ["Tanggal", dateStr],
+    ["Pengepul / Penerima", String(tx.pengepul || tx.penerima || "-")],
+    ["Total Berat", formatKg(totalKg)],
+    ["Estimasi Nilai", formatRp(totalNilai)],
+  ];
+  const cardW = 43;
+  cards.forEach(([label, value], i) => {
+    const x = margin + i * (cardW + 3);
+    doc.setFillColor(241, 245, 241);
+    doc.roundedRect(x, y, cardW, 20, 2.5, 2.5, "F");
+    doc.setTextColor(100, 112, 106);
+    doc.setFontSize(7.5);
+    doc.text(label, x + 4, y + 7);
+    doc.setTextColor(16, 36, 27);
+    doc.setFontSize(9.5);
+    doc.setFont(undefined, "bold");
+    doc.text(String(value).slice(0, 22), x + 4, y + 15);
+    doc.setFont(undefined, "normal");
+  });
+  y += 30;
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Rincian per Kategori", margin, y);
+  y += 5;
+
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Kategori", margin + 3, y + 5);
+  doc.text("Berat", margin + 100, y + 5);
+  doc.text("Estimasi Nilai", margin + 140, y + 5);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(45, 60, 53);
+
+  if (!details.length) {
+    doc.setFontSize(8.5);
+    doc.text("Tidak ada rincian kategori.", margin + 3, y + 5);
+    y += 10;
+  }
+
+  details.forEach((d, i) => {
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.setFontSize(8);
+    doc.text(d.kategori, margin + 3, y + 5);
+    doc.text(formatKg(d.kg), margin + 100, y + 5);
+    doc.text(formatRp(d.nilai), margin + 140, y + 5);
+    y += 7;
+  });
+
+  y += 6;
+  doc.setFontSize(9.5);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Catatan", margin, y);
+  y += 5;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(45, 60, 53);
+  const wrappedCatatan = doc.splitTextToSize(tx.catatan || "-", 180);
+  doc.text(wrappedCatatan, margin, y);
+  y += wrappedCatatan.length * 4.2 + 10;
+
+  doc.setTextColor(120, 130, 125);
+  doc.setFontSize(7);
+  doc.text("Laporan dibuat otomatis dari data pengeluaran sampah yang tersimpan di Firebase.", margin, 287);
+  doc.save(`pengeluaran-sampah-${tx.txId || isoDate(new Date())}.pdf`);
+}
 
 // ============================================================================
 // Keuangan
@@ -1881,6 +2123,27 @@ function renderMonthlyReportPreview() {
   `;
 
   document.getElementById("monthlyCategoryBody").innerHTML = categoryRows;
+
+  const wasteOutRows = data.wasteOut
+    .slice()
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+  const wasteOutBodyEl = document.getElementById("monthlyWasteOutBody");
+  if (wasteOutBodyEl) {
+    wasteOutBodyEl.innerHTML =
+      wasteOutRows.map(wasteOutHistoryRowHtmlNoActions).join("") ||
+      `<tr class="loading-row"><td colspan="6">Belum ada pengeluaran sampah pada bulan ini.</td></tr>`;
+  }
+  const wasteOutSummaryEl = document.getElementById("monthlyWasteOutSummary");
+  if (wasteOutSummaryEl) {
+    const totalNilaiOut = wasteOutRows.reduce(
+      (sum, tx) => sum + wasteOutItemDetails(tx).reduce((s, d) => s + d.nilai, 0),
+      0,
+    );
+    wasteOutSummaryEl.textContent = wasteOutRows.length
+      ? `${wasteOutRows.length} catatan • total ${formatKg(data.totalOutKg)} dikeluarkan • estimasi nilai ${formatRp(totalNilaiOut)} pada ${data.label}.`
+      : `Belum ada pengeluaran sampah pada ${data.label}.`;
+  }
+
   document.getElementById("monthlyAnalysis").textContent = data.tx.length
     ? `Bulan ${data.label}: tercatat ${data.tx.length} transaksi dari ${data.activeCustomers} nasabah aktif. Setoran menghasilkan ${formatKg(data.totalKg)} sampah dengan nilai ${formatRp(data.totalMasuk)}. Sampah yang dikeluarkan ke pengepul/pihak lain mencapai ${formatKg(data.totalOutKg)}. Penarikan saldo mencapai ${formatRp(data.totalTarik)}. Hari dengan pemasukan setor tertinggi adalah ${bestDay}. Rata-rata nilai setiap transaksi setor ${formatRp(avg)}.`
     : `Belum ada transaksi pada ${data.label}.`;
@@ -2037,6 +2300,68 @@ async function downloadMonthlyPdf() {
     }
     doc.text(name, margin + 3, y + 5);
     doc.text(formatKg(kg), margin + 150, y + 5);
+    y += 7;
+  });
+
+  y += 10;
+  if (y > 260) {
+    doc.addPage();
+    y = 18;
+  }
+
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Pengeluaran Sampah Bulan Ini", margin, y);
+  y += 5;
+  doc.setFont(undefined, "normal");
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Tanggal", margin + 3, y + 5);
+  doc.text("Pengepul/Penerima", margin + 28, y + 5);
+  doc.text("Total Kg", margin + 100, y + 5);
+  doc.text("Estimasi Nilai", margin + 125, y + 5);
+  doc.text("Catatan", margin + 155, y + 5);
+  y += 7;
+  doc.setTextColor(45, 60, 53);
+
+  const wasteOutRows = data.wasteOut
+    .slice()
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+  if (!wasteOutRows.length) {
+    doc.setFontSize(8.5);
+    doc.text("Belum ada pengeluaran sampah pada bulan ini.", margin + 3, y + 5);
+    y += 10;
+  }
+
+  wasteOutRows.forEach((tx, i) => {
+    const txDate = tx.tanggal ? new Date(tx.tanggal) : null;
+    const txDateStr = txDate
+      ? `${txDate.getDate()}/${txDate.getMonth() + 1}/${txDate.getFullYear()}`
+      : "-";
+    const details = wasteOutItemDetails(tx);
+    const rowTotalKg = details.reduce((sum, d) => sum + d.kg, 0);
+    const rowTotalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+    const catatanText = tx.catatan || "-";
+
+    if (y > 280) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.setFontSize(8);
+    doc.setTextColor(45, 60, 53);
+    doc.text(txDateStr, margin + 3, y + 5);
+    doc.text(String(tx.pengepul || tx.penerima || "-").slice(0, 30), margin + 28, y + 5);
+    doc.text(formatKg(rowTotalKg), margin + 100, y + 5);
+    doc.text(formatRp(rowTotalNilai), margin + 125, y + 5);
+    doc.text(catatanText.slice(0, 18), margin + 155, y + 5);
     y += 7;
   });
 
@@ -2620,6 +2945,8 @@ const setorItemsEl = document.getElementById("setorItems");
 const inputJumlah = document.getElementById("inputJumlah");
 const txtTotal = document.getElementById("txtTotal");
 const labelInput = document.getElementById("labelInput");
+const inputPinTarik = document.getElementById("inputPinTarik");
+const labelPinTarik = document.getElementById("labelPinTarik");
 const readerEl = document.getElementById("reader");
 const scanToggleButtons = document.querySelectorAll("#scanToggle .scan-toggle-btn");
 
@@ -2649,6 +2976,13 @@ async function cariNasabah(uid) {
     currentNasabahData = snapshot.val();
     txtNama.textContent = `${currentNasabahData.nama} (${currentNasabahData.kelas || ""})`;
     txtSaldo.textContent = formatRp(currentNasabahData.saldo_terakhir || 0);
+    const txtPinEl = document.getElementById("txtPin");
+    if (txtPinEl) {
+      txtPinEl.textContent = currentNasabahData.pin
+        ? "Sudah diatur"
+        : "Belum diatur";
+    }
+    if (inputPinTarik) inputPinTarik.value = "";
     divProfil.classList.remove("is-hidden", "hidden");
     divForm.classList.remove("is-hidden", "hidden");
     txEmptyNote.classList.add("hidden");
@@ -2676,6 +3010,11 @@ async function cariNasabah(uid) {
 document.getElementById("btnCari")?.addEventListener("click", () => {
   const uid = inputId.value.trim();
   if (uid) cariNasabah(uid);
+});
+
+document.getElementById("btnUbahPin")?.addEventListener("click", () => {
+  if (!currentUID) return;
+  resetPinNasabah(currentUID);
 });
 
 // ============================================================================
@@ -2771,11 +3110,14 @@ jenisTx.addEventListener("change", (e) => {
   wrapperSampah.style.display = isSetor ? "block" : "none";
   inputJumlah.style.display = isSetor ? "none" : "block";
   labelInput.style.display = isSetor ? "none" : "block";
+  if (labelPinTarik) labelPinTarik.style.display = isSetor ? "none" : "block";
+  if (inputPinTarik) inputPinTarik.style.display = isSetor ? "none" : "block";
   if (isSetor) {
     resetSetorItems();
   } else {
     inputJumlah.value = "";
   }
+  if (inputPinTarik) inputPinTarik.value = "";
   kalkulasi();
 });
 
@@ -2817,6 +3159,30 @@ document
         );
 
         return;
+      }
+
+      // Penarikan saldo wajib diverifikasi pakai PIN nasabah (kalau
+      // sudah diatur) supaya orang lain yang cuma pegang kartu/UID gak
+      // bisa asal narik saldo.
+      if (!isSetor) {
+        const pinNasabah = currentNasabahData.pin;
+        const pinInput = (inputPinTarik?.value || "").trim();
+        if (pinNasabah) {
+          if (!isValidPin(pinInput)) {
+            alert("Masukkan PIN 6 digit nasabah untuk memproses penarikan.");
+            return;
+          }
+          if (pinInput !== pinNasabah) {
+            alert("PIN salah. Penarikan dibatalkan.");
+            return;
+          }
+        } else if (
+          !confirm(
+            "Nasabah ini belum punya PIN transaksi. Lanjutkan penarikan tanpa verifikasi PIN?",
+          )
+        ) {
+          return;
+        }
       }
 
       const saldoBaru =
@@ -2880,6 +3246,7 @@ document
         );
 
         inputJumlah.value = "";
+        if (inputPinTarik) inputPinTarik.value = "";
         resetSetorItems();
         kalkulasi();
 
