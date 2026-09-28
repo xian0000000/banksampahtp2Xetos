@@ -15,26 +15,63 @@
 
 <!-- ============ LOGIN SCREEN ============ -->
 <div class="auth-shell" id="authShell">
-  <div class="auth-card">
-    <div class="brand-mark auth-brand-mark">
-      <img src="logo.png" alt="Resik For School" />
+  <!-- Dekorasi latar — murni visual, gak ada isi, aman disembunyikan dari screen reader. -->
+  <div class="auth-decor" aria-hidden="true">
+    <span class="auth-blob auth-blob--1"></span>
+    <span class="auth-blob auth-blob--2"></span>
+    <span class="auth-blob auth-blob--3"></span>
+    <svg class="auth-decor-ring auth-decor-ring--1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="9"/></svg>
+    <svg class="auth-decor-ring auth-decor-ring--2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="9"/></svg>
+    <svg class="auth-decor-leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M5 20c9 0 14-5 14-14 0 0-12-2-14 9-.6 3-.3 4.3 0 5Z"/><path d="M5 20c2-6 5-9 10-11"/></svg>
+  </div>
+
+  <div class="auth-layout">
+    <!-- Panel kiri: brand story, cuma tampil di layar lebar (lihat CSS). -->
+    <div class="auth-story">
+      <div class="brand-mark auth-story-mark">
+        <img src="logo.png" alt="" />
+      </div>
+      <h2 class="auth-story-title">Satu panel buat<br/>kelola bank sampah sekolah.</h2>
+      <p class="auth-story-text">Catat setoran &amp; penarikan, pantau stok sampah, dan kirim pengumuman — semuanya sinkron realtime ke aplikasi nasabah.</p>
+      <ul class="auth-story-points">
+        <li>
+          <span class="auth-story-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          Transaksi lewat scan QR nasabah
+        </li>
+        <li>
+          <span class="auth-story-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          Rekap &amp; raport bulanan otomatis
+        </li>
+        <li>
+          <span class="auth-story-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          Langsung nyambung ke app mobile nasabah
+        </li>
+      </ul>
     </div>
-    <h1 class="auth-title">Resik For School</h1>
-    <p class="auth-subtitle">Masuk ke panel admin pakai akun Google yang terdaftar.</p>
 
-    <button type="button" class="auth-btn auth-btn-google" id="authGoogleBtn">
-      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.92c1.7-1.57 2.68-3.88 2.68-6.64z"/>
-        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.92-2.27c-.81.54-1.85.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33C2.44 15.98 5.48 18 9 18z"/>
-        <path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l3.01-2.33z"/>
-        <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
-      </svg>
-      Login dengan Google
-    </button>
-    <p class="auth-note" id="authNote"></p>
+    <!-- Panel kanan: kartu login, selalu tampil. -->
+    <div class="auth-card">
+      <div class="brand-mark auth-brand-mark">
+        <img src="logo.png" alt="Resik For School" />
+      </div>
+      <h1 class="auth-title">Resik For School</h1>
+      <p class="auth-subtitle">Masuk ke panel admin pakai akun Google yang terdaftar.</p>
 
-    <div class="auth-sent-box hidden" id="authCheckingBox">
-      <p>Memeriksa akun…</p>
+      <button type="button" class="auth-btn auth-btn-google" id="authGoogleBtn">
+        <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.92c1.7-1.57 2.68-3.88 2.68-6.64z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.92-2.27c-.81.54-1.85.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33C2.44 15.98 5.48 18 9 18z"/>
+          <path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l3.01-2.33z"/>
+          <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+        </svg>
+        Login dengan Google
+      </button>
+      <p class="auth-note" id="authNote"></p>
+
+      <div class="auth-sent-box hidden" id="authCheckingBox">
+        <span class="auth-spinner"></span>
+        <p>Memeriksa akun…</p>
+      </div>
     </div>
   </div>
 </div>
@@ -94,6 +131,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg>
         Raport
       </button>
+      <button class="nav-item" data-view="pengumuman">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Pengumuman
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -113,83 +154,118 @@
 
     <!-- DASHBOARD VIEW -->
     <section class="view is-active" id="view-dashboard">
-      <div class="main-header">
+      <div class="resik-dash-head">
         <div>
-          <div class="main-title">Ringkasan</div>
-          <div class="main-subtitle">Aktivitas bank sampah hari ini</div>
+          <div class="resik-dash-kicker">BANK SAMPAH SEKOLAH</div>
+          <h1 class="resik-dash-title">Dashboard</h1>
+          <p class="resik-dash-subtitle">Overview aktivitas dan kondisi bank sampah.</p>
+        </div>
+        <div class="resik-dash-actions">
+          <span class="live-dot"></span><span>Realtime</span>
+          <span class="dash-date" id="dashboardToday">Hari ini</span>
         </div>
       </div>
 
-      <div class="stat-row">
-        <div class="stat-card">
-          <div class="stat-icon is-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>
-          </div>
-          <div>
-            <p class="stat-label">Total Nasabah</p>
-            <p class="stat-value" id="statTotalNasabah">–</p>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon is-gold">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
-          </div>
-          <div>
-            <p class="stat-label">Kategori Sampah</p>
-            <p class="stat-value" id="statTotalKategori">–</p>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon is-teal">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 22v-6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/></svg>
-          </div>
-          <div>
-            <p class="stat-label">Transaksi Hari Ini</p>
-            <p class="stat-value" id="statTxHariIni">–</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid-row">
-        <div class="panel">
-          <div class="panel-head">
-            <span class="panel-title">Akumulasi Stok Sampah Saat Ini</span>
-          </div>
-          <div class="donut-wrap">
-            <div class="donut-figure" id="donutFigure"></div>
-            <div class="legend" id="donutLegend"></div>
-          </div>
-        </div>
-
-        <div class="panel-dark">
-          <div>
-            <p class="panel-dark-label">Kategori Aktif</p>
-            <p class="panel-dark-value" id="darkTotalKategori">–</p>
-          </div>
-          <div class="panel-dark-divider"></div>
-          <div class="panel-dark-row">
+      <!-- Hero area: chart + composition -->
+      <div class="resik-hero-grid">
+        <div class="resik-hero-chart panel">
+          <div class="resik-chart-head">
             <div>
-              <p class="panel-dark-label">Sampah Masuk (30 hari)</p>
-              <p class="panel-dark-value" id="darkWasteIn">– kg</p>
+              <div class="resik-section-label">AKTIVITAS</div>
+              <h2>Arus transaksi</h2>
+              <p>Setoran dan penarikan selama 30 hari terakhir.</p>
             </div>
-            <div class="mini-bars" id="darkMiniBars"></div>
+            <div class="resik-chart-tabs" id="dashboardRangeTabs" role="tablist" aria-label="Periode grafik">
+              <button type="button" class="active" data-range="1" role="tab" aria-selected="true">HARIAN</button>
+              <button type="button" data-range="7" role="tab" aria-selected="false">7 HARI</button>
+              <button type="button" data-range="30" role="tab" aria-selected="false">30 HARI</button>
+            </div>
           </div>
-          <div class="panel-dark-divider"></div>
-          <div>
-            <p class="panel-dark-label">Saldo Ditarik (30 hari)</p>
-            <p class="panel-dark-value" id="darkWasteOut">–</p>
+          <div class="resik-chart-total-row">
+            <div>
+              <span class="resik-big-number" id="dashboardTxTotal">–</span>
+              <span class="resik-big-label" id="dashboardTxLabel">transaksi hari ini</span>
+            </div>
+            <div class="resik-chart-legend">
+              <span><i class="dot dot-in"></i>Setor</span>
+              <span><i class="dot dot-out"></i>Tarik</span>
+            </div>
+          </div>
+          <svg class="chart-figure resik-main-chart" id="lineChart" viewBox="0 0 640 300" preserveAspectRatio="none"></svg>
+          <div class="resik-mini-stats">
+            <div><span class="mini-icon pink">♻</span><div><b id="statTotalNasabah">–</b><small>Nasabah aktif</small></div></div>
+            <div><span class="mini-icon purple">▣</span><div><b id="statTotalKategori">–</b><small>Kategori sampah</small></div></div>
+            <div><span class="mini-icon cyan">↕</span><div><b id="statTxHariIni">–</b><small>Transaksi hari ini</small></div></div>
+          </div>
+        </div>
+
+        <div class="resik-traffic panel">
+          <div class="resik-section-label">STOK SAAT INI</div>
+          <h2>Komposisi sampah</h2>
+          <p>Berat sampah yang masih tersimpan.</p>
+          <div class="resik-donut-area">
+            <div class="donut-figure resik-donut" id="donutFigure"></div>
+          </div>
+          <div class="legend resik-donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+
+      <!-- Four compact metric cards, inspired by the reference dashboard -->
+      <div class="resik-metric-grid">
+        <div class="resik-metric-card metric-pink">
+          <div class="metric-card-label">NASABAH</div>
+          <div class="metric-card-bottom"><strong id="metricNasabah">–</strong><span>orang</span></div>
+          <div class="metric-spark"><i style="height:12px"></i><i style="height:22px"></i><i style="height:17px"></i><i style="height:30px"></i><i style="height:24px"></i><i style="height:38px"></i></div>
+        </div>
+        <div class="resik-metric-card metric-purple">
+          <div class="metric-card-label">SALDO AKTIF</div>
+          <div class="metric-card-bottom"><strong id="metricSaldo">Rp 0</strong></div>
+          <div class="metric-wave"></div>
+        </div>
+        <div class="resik-metric-card metric-blue">
+          <div class="metric-card-label">SAMPAH MASUK</div>
+          <div class="metric-card-bottom"><strong id="metricWasteIn">0 kg</strong><span>30 hari</span></div>
+          <div class="metric-line"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="resik-metric-card metric-orange">
+          <div class="metric-card-label">SAMPAH KELUAR</div>
+          <div class="metric-card-bottom"><strong id="metricWasteOut">0 kg</strong><span>30 hari</span></div>
+          <div class="metric-spark bars"><i style="height:18px"></i><i style="height:28px"></i><i style="height:12px"></i><i style="height:34px"></i><i style="height:22px"></i><i style="height:40px"></i></div>
+        </div>
+      </div>
+
+      <!-- Recent activity + real transaction list -->
+      <div class="resik-bottom-grid">
+        <div class="panel resik-activity-panel">
+          <div class="resik-bottom-head">
+            <div><h2>Aktivitas terbaru</h2><p>Transaksi bank sampah yang paling baru.</p></div>
+          </div>
+          <div class="resik-activity-list" id="dashboardActivityList">
+            <p class="empty-note">Memuat transaksi…</p>
+          </div>
+        </div>
+        <div class="panel resik-orders-panel">
+          <div class="resik-bottom-head">
+            <div><h2>Ringkasan transaksi</h2><p>Data realtime dari transaksi bank sampah.</p></div>
+            <button type="button" class="resik-filter-pill" data-view-jump="transaksi">Lihat transaksi →</button>
+          </div>
+          <div class="resik-order-table-wrap">
+            <table class="resik-order-table">
+              <thead><tr><th>TANGGAL</th><th>NASABAH</th><th>JENIS</th><th>NOMINAL / BERAT</th></tr></thead>
+              <tbody id="dashboardTxTable"><tr><td colspan="4" class="resik-table-empty">Memuat data…</td></tr></tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      <div class="panel">
-        <div class="chart-panel-head">
-          <span class="panel-title">Arus Transaksi — 30 Hari Terakhir</span>
-          <div class="chart-legend">
-            <span><i style="background:#1E7A4C"></i>Masuk</span><span><i style="background:#12A883"></i>Narik</span>
-          </div>
-        </div>
-        <svg class="chart-figure" id="lineChart" viewBox="0 0 640 300" preserveAspectRatio="xMidYMid meet"></svg>
+      <!-- Existing functional targets are kept so the fixed app.js remains compatible. -->
+      <div class="dashboard-functional-cache" aria-hidden="true">
+        <span id="darkTotalKategori">–</span>
+        <span id="darkWasteIn">–</span>
+        <span id="darkWasteOut">–</span>
+        <div id="darkMiniBars"></div>
+        <div id="lastTxList"></div>
+        <span id="balanceValue">Rp 0</span>
       </div>
     </section>
 
@@ -206,9 +282,15 @@
         </div>
       </div>
 
-      <div class="tx-layout" style="margin-bottom:14px">
-        <div class="panel">
-          <p class="field-label">Tambah Nasabah Baru</p>
+      <div class="nasabah-create-grid">
+        <div class="panel nasabah-form-card">
+          <div class="nasabah-card-heading">
+            <div class="nasabah-card-icon" aria-hidden="true">＋</div>
+            <div>
+              <h2>Tambah nasabah baru</h2>
+              <p>Daftarkan siswa, guru &amp; staff, atau masyarakat umum.</p>
+            </div>
+          </div>
           <div class="field-row">
             <div>
               <label class="field-label" for="nasabahNama">Nama</label>
@@ -231,18 +313,58 @@
           <p class="empty-note" id="nasabahAddError"></p>
         </div>
 
-        <div class="panel" id="nasabahResultPanel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px">
-          <p class="empty-note" id="nasabahResultEmpty">Kartu QR nasabah baru akan muncul di sini setelah ditambahkan — tunjukkan/print QR ini untuk dipakai nasabah saat setor sampah.</p>
-          <div id="nasabahResultCard" class="hidden" style="display:flex;flex-direction:column;align-items:center;gap:10px">
-            <p class="name" id="nasabahResultNama" style="font-weight:700;font-size:14.5px"></p>
-            <div id="nasabahResultQr"></div>
-            <p class="tx-sub">UID: <span id="nasabahResultUid" style="font-family:var(--font-mono)"></span> <button type="button" class="link-btn" id="btnCopyResultUid" title="Salin UID">Salin</button></p>
-            <p class="empty-note" style="margin:0">Tunjukkan QR ini ke nasabah. PIN transaksi belum ada — nasabah akan diminta membuat PIN sendiri (6 digit) saat pertama kali login di aplikasi mobile.</p>
+        <div class="panel nasabah-qr-card" id="nasabahResultPanel">
+          <div class="nasabah-card-heading">
+            <div class="nasabah-card-icon nasabah-card-icon--qr" aria-hidden="true">QR</div>
+            <div>
+              <h2>Kartu Nasabah</h2>
+              <p>Pilih nasabah pada tabel untuk melihat identitas, saldo, dan QR.</p>
+            </div>
+          </div>
+          <div class="nasabah-qr-content">
+            <p class="empty-note" id="nasabahResultEmpty">Pilih salah satu nasabah di daftar di bawah. Informasi lengkap dan QR-nya akan muncul di sini.</p>
+            <div id="nasabahResultCard" class="hidden nasabah-result-card">
+              <div class="nasabah-result-top">
+                <div class="nasabah-result-identity">
+                  <div class="nasabah-result-avatar" id="nasabahResultAvatar">N</div>
+                  <div>
+                    <p class="name" id="nasabahResultNama"></p>
+                    <p class="nasabah-result-meta" id="nasabahResultTipeKelas"></p>
+                  </div>
+                </div>
+                <span class="nasabah-result-status">Aktif</span>
+              </div>
+
+              <div class="nasabah-result-body">
+                <div class="nasabah-result-qr-wrap">
+                  <div id="nasabahResultQr"></div>
+                  <span>Scan untuk identitas nasabah</span>
+                </div>
+                <div class="nasabah-result-info">
+                  <div class="nasabah-info-item"><span>Email</span><strong id="nasabahResultEmail">-</strong></div>
+                  <div class="nasabah-info-item"><span>Saldo</span><strong id="nasabahResultSaldo">Rp 0</strong></div>
+                  <div class="nasabah-info-item nasabah-info-item--uid"><span>UID</span><strong id="nasabahResultUid"></strong></div>
+                  <div class="nasabah-info-item"><span>PIN transaksi</span><strong id="nasabahResultPin">Belum diatur</strong></div>
+                </div>
+              </div>
+
+              <div class="nasabah-result-actions">
+                <button type="button" class="btn btn-secondary" id="btnCopyResultUid">Salin UID</button>
+                <span>Tunjukkan QR ini saat setor atau tarik sampah.</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel nasabah-table-card">
+        <div class="nasabah-table-head">
+          <div>
+            <h2>Daftar nasabah</h2>
+            <p>Kelola data, saldo, UID, dan PIN nasabah.</p>
+          </div>
+          <div class="nasabah-table-count" id="nasabahTableCount">Realtime</div>
+        </div>
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
@@ -624,41 +746,35 @@
       </div>
     </section>
 
+    <!-- PENGUMUMAN VIEW -->
+    <section class="view" id="view-pengumuman">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Pengumuman</div>
+          <div class="main-subtitle">Kirim pengumuman — langsung tampil realtime di aplikasi mobile semua nasabah</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <p class="field-label">Buat Pengumuman Baru</p>
+        <input type="text" id="pengumumanJudul" class="text-input" placeholder="Judul, misal: Libur Setor Sampah" style="margin-bottom:10px" />
+        <textarea id="pengumumanIsi" class="text-input" rows="4" placeholder="Isi pengumuman…" style="width:100%; resize:vertical; font-family:inherit;"></textarea>
+        <div style="margin-top:10px; display:flex; justify-content:flex-end">
+          <button id="btnKirimPengumuman" class="btn btn-primary" style="width:auto">Kirim ke Semua Nasabah</button>
+        </div>
+        <p class="empty-note" id="pengumumanAddError"></p>
+      </div>
+
+      <div class="panel">
+        <p class="field-label">Riwayat Pengumuman</p>
+        <div id="listPengumuman"></div>
+      </div>
+    </section>
+
   </main>
 
   <!-- ============ RIGHT SIDE PANEL ============ -->
-  <aside class="side-panel">
-    <div class="side-topbar">
-      <button class="icon-btn" aria-label="Notifikasi">
-        <span class="dot"></span>
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-      </button>
-      <div class="admin-chip">
-        <div class="avatar">AS</div>
-        <div>
-          <strong>Admin Sekolah</strong>
-        </div>
-      </div>
-    </div>
 
-    <div class="balance-card">
-      <div class="balance-top">
-        Saldo Bank Sampah
-        <span class="balance-toggle"></span>
-      </div>
-      <p class="balance-label">Total saldo aktif nasabah</p>
-      <p class="balance-value" id="balanceValue">Rp 0</p>
-    </div>
-
-    <div class="side-tx-block">
-      <div class="panel-head" style="margin-top:4px">
-        <span class="panel-title">Transaksi Terakhir</span>
-      </div>
-      <div class="tx-list" id="lastTxList">
-        <p class="empty-note">Memuat transaksi…</p>
-      </div>
-    </div>
-  </aside>
 
 </div>
 

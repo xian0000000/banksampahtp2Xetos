@@ -39,6 +39,10 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
+// Data grafik dashboard disimpan supaya tab Harian / 7 Hari / 30 Hari
+// bisa berganti tanpa request Firebase ulang.
+let dashboardChartState = { days: [], masuk: [], tarik: [], range: 1 };
+
 // ============================================================================
 // Auth — login admin pakai Google Sign-In, dibatasi ke email yang terdaftar
 // di node RTDB `admin_emails` (diatur langsung dari Firebase console / RTDB,
@@ -125,6 +129,8 @@ onAuthStateChanged(auth, async (user) => {
 
     document.getElementById("lastTxList").innerHTML =
       `<p class="empty-note">${msg}</p>`;
+    const sideError = document.getElementById("sideLastTxList");
+    if (sideError) sideError.innerHTML = `<p class="empty-note">${msg}</p>`;
 
     // Tampilkan juga di area statistik utama supaya jelas kelihatan
     // dashboard-nya bukan "kosong" tapi memang gagal ambil data.
@@ -261,6 +267,10 @@ async function copyToClipboard(text, btn) {
 document.getElementById("btnCopyResultUid")?.addEventListener("click", (e) => {
   const uid = document.getElementById("nasabahResultUid")?.textContent.trim();
   if (uid) copyToClipboard(uid, e.currentTarget);
+});
+
+document.querySelectorAll("#dashboardRangeTabs button").forEach((button) => {
+  button.addEventListener("click", () => setDashboardRange(button.dataset.range));
 });
 
 function last30Days() {
@@ -557,19 +567,41 @@ function renderStokDonut(flat) {
 // Rendering: line chart
 // ============================================================================
 
+function smoothPath(points) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
+
+  let d = `M ${points[0].x.toFixed(2)},${points[0].y.toFixed(2)}`;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${c1x.toFixed(2)},${c1y.toFixed(2)} ${c2x.toFixed(2)},${c2y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+
 function renderAccumulationChart(days, masukRp, tarikRp) {
-  const w = 640;
-  const h = 300;
-  const padL = 52;
-  const padR = 16;
-  const padT = 22;
-  const padB = 30;
+  const svg = document.getElementById("lineChart");
+  if (!svg) return;
+
+  const w = 900;
+  const h = 320;
+  const padL = 58;
+  const padR = 18;
+  const padT = 24;
+  const padB = 34;
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
   const rawMax = Math.max(1, ...masukRp, ...tarikRp);
-  const maxVal = Math.ceil((rawMax * 1.15) / 10000) * 10000 || 10000;
-  const stepX = plotW / (days.length - 1 || 1);
+  const maxVal = Math.ceil((rawMax * 1.18) / 10000) * 10000 || 10000;
+  const stepX = plotW / Math.max(days.length - 1, 1);
 
   const makePoints = (values) => values.map((v, i) => ({
     x: padL + i * stepX,
@@ -579,6 +611,7 @@ function renderAccumulationChart(days, masukRp, tarikRp) {
 
   const masukPoints = makePoints(masukRp);
   const tarikPoints = makePoints(tarikRp);
+  const baseY = padT + plotH;
 
   const gridSteps = [0, 0.25, 0.5, 0.75, 1];
   const gridLines = gridSteps.map((f) => {
@@ -586,46 +619,84 @@ function renderAccumulationChart(days, masukRp, tarikRp) {
     const label = formatRp(maxVal * (1 - f));
     return `
       <line x1="${padL}" y1="${y.toFixed(2)}" x2="${w - padR}" y2="${y.toFixed(2)}"
-        stroke="#D8E1DC" stroke-width="1" />
-      <text x="0" y="${(y + 3.5).toFixed(2)}" font-size="9.5" fill="#7C8982">${label}</text>
+        stroke="#e7ebee" stroke-width="1" />
+      <text x="4" y="${(y + 4).toFixed(2)}" font-size="10" fill="#9aa2a9">${label}</text>
     `;
   }).join("");
 
-  const labelEvery = Math.ceil(days.length / 6);
+  const labelEvery = Math.max(1, Math.ceil(days.length / 7));
   const dayLabels = days.map((d, i) => {
     if (i % labelEvery !== 0 && i !== days.length - 1) return "";
     const x = padL + i * stepX;
-    return `<text x="${x.toFixed(2)}" y="${h - 8}" text-anchor="middle" font-size="9.5" fill="#68766F">${d.getDate()}/${d.getMonth() + 1}</text>`;
+    return `<text x="${x.toFixed(2)}" y="${h - 9}" text-anchor="middle" font-size="10" fill="#8c959d">${d.getDate()}/${d.getMonth() + 1}</text>`;
   }).join("");
 
-  const linePath = (points) => points.map((p, i) =>
-    `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)},${p.y.toFixed(2)}`
-  ).join(" ");
+  const masukPath = smoothPath(masukPoints);
+  const tarikPath = smoothPath(tarikPoints);
+  const masukArea = `${masukPath} L ${masukPoints.at(-1)?.x.toFixed(2) ?? padL},${baseY} L ${masukPoints[0]?.x.toFixed(2) ?? padL},${baseY} Z`;
+  const tarikArea = `${tarikPath} L ${tarikPoints.at(-1)?.x.toFixed(2) ?? padL},${baseY} L ${tarikPoints[0]?.x.toFixed(2) ?? padL},${baseY} Z`;
 
-  const makeDots = (points, color) => points.map((p, i) => {
-    const last = i === points.length - 1;
-    return `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="${last ? 4.5 : 2.7}"
-      fill="${last ? color : "#FFFFFF"}" stroke="${color}" stroke-width="${last ? 2.5 : 1.5}">
-      <title>${days[i].getDate()}/${days[i].getMonth() + 1}: ${formatRp(p.v)}</title>
-    </circle>`;
-  }).join("");
+  const highlightDots = (points, color) => points
+    .filter((_, i) => i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2))
+    .map((p) => `<circle cx="${p.x.toFixed(2)}" cy="${p.y.toFixed(2)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"><title>${formatRp(p.v)}</title></circle>`)
+    .join("");
 
-  const masukColor = "#1E7A4C";
-  const tarikColor = "#12A883";
+  const masukColor = "#df4b93";
+  const tarikColor = "#8058b6";
 
-  document.getElementById("lineChart").innerHTML = `
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="dashPinkFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#df4b93" stop-opacity="0.22"/>
+        <stop offset="100%" stop-color="#df4b93" stop-opacity="0.01"/>
+      </linearGradient>
+      <linearGradient id="dashPurpleFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#8058b6" stop-opacity="0.18"/>
+        <stop offset="100%" stop-color="#8058b6" stop-opacity="0.01"/>
+      </linearGradient>
+    </defs>
     ${gridLines}
-
-    <path d="${linePath(masukPoints)}" fill="none" stroke="${masukColor}"
-      stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="${linePath(tarikPoints)}" fill="none" stroke="${tarikColor}"
-      stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" />
-
-    ${makeDots(masukPoints, masukColor)}
-    ${makeDots(tarikPoints, tarikColor)}
+    <path d="${masukArea}" fill="url(#dashPinkFill)" stroke="none"/>
+    <path d="${tarikArea}" fill="url(#dashPurpleFill)" stroke="none"/>
+    <path d="${masukPath}" fill="none" stroke="${masukColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${tarikPath}" fill="none" stroke="${tarikColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    ${highlightDots(masukPoints, masukColor)}
+    ${highlightDots(tarikPoints, tarikColor)}
     ${dayLabels}
   `;
 }
+
+function setDashboardRange(range) {
+  const n = Number(range) || 1;
+  dashboardChartState.range = n;
+  const take = Math.min(n, dashboardChartState.days.length || n);
+  const days = dashboardChartState.days.slice(-take);
+  const masuk = dashboardChartState.masuk.slice(-take);
+  const tarik = dashboardChartState.tarik.slice(-take);
+
+  renderAccumulationChart(days, masuk, tarik);
+
+  const label = document.getElementById("dashboardTxLabel");
+  const total = document.getElementById("dashboardTxTotal");
+  const tabs = document.querySelectorAll("#dashboardRangeTabs button");
+  tabs.forEach((tab) => {
+    const active = Number(tab.dataset.range) === n;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  const totalTx = dashboardChartState.flat
+    ? dashboardChartState.flat.filter((t) => {
+        const key = t.tanggal?.slice(0, 10);
+        return days.some((d) => isoDate(d) === key);
+      }).length
+    : 0;
+
+  if (total) total.textContent = totalTx.toLocaleString("id-ID");
+  if (label) label.textContent = n === 1 ? "transaksi hari ini" : `transaksi dalam ${n} hari`;
+}
+
 
 function renderMiniBars(values) {
   const max = Math.max(1, ...values);
@@ -720,7 +791,21 @@ let cache = {
   transactions: {},
   flat: [],
   kategori: [],
+  pengumuman: [],
 };
+
+async function fetchPengumuman() {
+  try {
+    const snap = await get(child(ref(db), "pengumuman"));
+    if (!snap.exists()) return [];
+    return Object.entries(snap.val())
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+  } catch (err) {
+    console.error("Gagal membaca node 'pengumuman':", err);
+    return [];
+  }
+}
 
 // ============================================================================
 // Dashboard
@@ -732,11 +817,13 @@ async function loadDashboard() {
     transactionsByUser,
     kategori,
     wasteOut,
+    pengumuman,
   ] = await Promise.all([
     fetchAllUsers(),
     fetchAllTransactions(),
     fetchKategori(),
     fetchAllWasteOut(),
+    fetchPengumuman(),
   ]);
 
   const flat = flattenTransactions(
@@ -751,6 +838,7 @@ async function loadDashboard() {
     wasteOut,
     flat,
     kategori,
+    pengumuman,
   };
 
   populateKategoriSelect();
@@ -861,13 +949,15 @@ async function loadDashboard() {
 
   renderMiniBars(setorCounts);
 
-  // Line chart
-
-  renderAccumulationChart(
-    days30,
-    masukRp30,
-    tarikRp30,
-  );
+  // Line chart — simpan 30 hari sekali, lalu tab hanya memotong data yang sudah ada.
+  dashboardChartState = {
+    days: days30,
+    masuk: masukRp30,
+    tarik: tarikRp30,
+    flat,
+    range: 1,
+  };
+  setDashboardRange(1);
 
   // Balance
 
@@ -880,11 +970,53 @@ async function loadDashboard() {
 
   const lastTx = flat.slice(0, 6);
 
-  document.getElementById(
-    "lastTxList",
-  ).innerHTML =
-    lastTx.map(txRowHtml).join("") ||
+  const lastTxHtml = lastTx.map(txRowHtml).join("") ||
     '<p class="empty-note">Belum ada transaksi.</p>';
+
+  document.getElementById("lastTxList").innerHTML = lastTxHtml;
+  const sideLastTx = document.getElementById("sideLastTxList");
+  if (sideLastTx) sideLastTx.innerHTML = lastTxHtml;
+
+  // Dashboard reference layout uses the same live Firebase data, only with
+  // a different presentation. No transaction logic is duplicated here.
+  const dashboardTxTotal = document.getElementById("dashboardTxTotal");
+  if (dashboardTxTotal) dashboardTxTotal.textContent = last30.length.toLocaleString("id-ID");
+
+  const metricNasabah = document.getElementById("metricNasabah");
+  const metricSaldo = document.getElementById("metricSaldo");
+  const metricWasteIn = document.getElementById("metricWasteIn");
+  const metricWasteOut = document.getElementById("metricWasteOut");
+  if (metricNasabah) metricNasabah.textContent = Object.keys(users).length.toLocaleString("id-ID");
+  if (metricSaldo) metricSaldo.textContent = formatRp(saldoAktifTotal);
+  if (metricWasteIn) metricWasteIn.textContent = formatKg(wasteInKg);
+
+  const wasteOut30Kg = last30
+    .filter((t) => t.isWasteOut || t.tipe === "Pengeluaran Sampah")
+    .reduce((sum, t) => sum + totalBeratWasteOut(t), 0);
+  if (metricWasteOut) metricWasteOut.textContent = formatKg(wasteOut30Kg);
+
+  const todayEl = document.getElementById("dashboardToday");
+  if (todayEl) {
+    todayEl.textContent = new Intl.DateTimeFormat("id-ID", {
+      day: "2-digit", month: "short", year: "numeric",
+    }).format(new Date());
+  }
+
+  const activityEl = document.getElementById("dashboardActivityList");
+  if (activityEl) activityEl.innerHTML = lastTx.map(txRowHtml).join("") || '<p class="empty-note">Belum ada aktivitas.</p>';
+
+  const tableEl = document.getElementById("dashboardTxTable");
+  if (tableEl) {
+    tableEl.innerHTML = lastTx.slice(0, 6).map((tx) => {
+      const isSetor = tx.tipe === "Setor";
+      const isWasteOut = tx.isWasteOut || tx.tipe === "Pengeluaran Sampah";
+      const d = tx.tanggal ? new Date(tx.tanggal) : null;
+      const date = d && !Number.isNaN(d.getTime()) ? `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}` : "-";
+      const jenis = isSetor ? "Setor" : isWasteOut ? "Keluar" : "Tarik";
+      const nilai = isSetor ? `${formatKg(totalBeratTx(tx))} · ${formatRp(tx.total_rp)}` : isWasteOut ? formatKg(totalBeratWasteOut(tx)) : formatRp(tx.total_rp);
+      return `<tr><td>${date}</td><td><strong>${tx.nama || "Nasabah"}</strong></td><td><span class="dash-type dash-type--${isSetor ? "in" : isWasteOut ? "waste" : "out"}">${jenis}</span></td><td>${nilai}</td></tr>`;
+    }).join("") || '<tr><td colspan="4" class="resik-table-empty">Belum ada transaksi.</td></tr>';
+  }
 
   return {
     users,
@@ -901,8 +1033,55 @@ async function loadDashboard() {
 // Nasabah
 // ============================================================================
 
+function showNasabahPreview(uid) {
+  const user = cache.users?.[uid];
+  if (!user) return;
+
+  document.querySelectorAll("#tableNasabah tr[data-user-uid]").forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset.userUid === uid);
+  });
+
+  const empty = document.getElementById("nasabahResultEmpty");
+  const card = document.getElementById("nasabahResultCard");
+  empty?.classList.add("hidden");
+  card?.classList.remove("hidden");
+
+  const nama = user.nama || "Nasabah";
+  const tipe = user.tipe || "Siswa";
+  const kelas = user.kelas && user.kelas !== "-" ? user.kelas : "-";
+  const avatar = document.getElementById("nasabahResultAvatar");
+  const nameEl = document.getElementById("nasabahResultNama");
+  const typeClassEl = document.getElementById("nasabahResultTipeKelas");
+  const emailEl = document.getElementById("nasabahResultEmail");
+  const saldoEl = document.getElementById("nasabahResultSaldo");
+  const uidEl = document.getElementById("nasabahResultUid");
+  const pinEl = document.getElementById("nasabahResultPin");
+  const qrBox = document.getElementById("nasabahResultQr");
+
+  if (avatar) avatar.textContent = nama.trim().charAt(0).toUpperCase() || "N";
+  if (nameEl) nameEl.textContent = nama;
+  if (typeClassEl) typeClassEl.textContent = `${tipe} • ${kelas}`;
+  if (emailEl) emailEl.textContent = user.email || "Belum dihubungkan";
+  if (saldoEl) saldoEl.textContent = formatRp(user.saldo_terakhir || 0);
+  if (uidEl) uidEl.textContent = uid;
+  if (pinEl) pinEl.textContent = user.pin ? "Sudah diatur" : "Belum diatur";
+
+  if (qrBox && typeof QRCode !== "undefined") {
+    qrBox.innerHTML = "";
+    new QRCode(qrBox, {
+      text: uid,
+      width: 132,
+      height: 132,
+      colorDark: "#10241B",
+      colorLight: "#ffffff",
+    });
+  }
+}
+
 function renderNasabahTable(users) {
   const rows = Object.entries(users);
+  const countEl = document.getElementById("nasabahTableCount");
+  if (countEl) countEl.textContent = `${rows.length} nasabah`;
 
   document.getElementById(
     "tableNasabah",
@@ -910,7 +1089,7 @@ function renderNasabahTable(users) {
     rows
       .map(
         ([uid, u]) => `
-          <tr>
+          <tr class="nasabah-row" data-user-uid="${uid}" tabindex="0" role="button" aria-label="Pilih nasabah ${escapeHtml(u.nama || "Nasabah")}">
             <td>${u.nama || "-"}</td>
 
             <td>${u.tipe || "Siswa"}</td>
@@ -964,6 +1143,21 @@ function renderNasabahTable(users) {
       </tr>
     `;
 }
+
+document.getElementById("tableNasabah")?.addEventListener("click", (e) => {
+  if (e.target.closest("button, a, input, select")) return;
+  const row = e.target.closest("tr[data-user-uid]");
+  if (row?.dataset.userUid) showNasabahPreview(row.dataset.userUid);
+});
+
+document.getElementById("tableNasabah")?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  if (e.target.closest("button, a, input, select")) return;
+  const row = e.target.closest("tr[data-user-uid]");
+  if (!row?.dataset.userUid) return;
+  e.preventDefault();
+  showNasabahPreview(row.dataset.userUid);
+});
 
 async function resetPinNasabah(uid) {
   const user = cache.users?.[uid];
@@ -1192,6 +1386,7 @@ document
       renderNasabahTable(
         cache.users,
       );
+      showNasabahPreview(newUid);
     },
   );
 
@@ -1258,6 +1453,8 @@ document.getElementById("tableNasabah")?.addEventListener("click", async (e) => 
       await update(ref(db), updates);
       await loadDashboard();
       renderNasabahTable(cache.users);
+      document.getElementById("nasabahResultCard")?.classList.add("hidden");
+      document.getElementById("nasabahResultEmpty")?.classList.remove("hidden");
     } catch (err) { console.error(err); alert("Gagal menghapus nasabah."); }
   }
 });
@@ -1275,6 +1472,107 @@ function populateKategoriSelect() {
     kalkulasiWasteOut();
   }
 }
+
+// ============================================================================
+// Pengumuman — dibaca realtime oleh semua aplikasi mobile nasabah lewat
+// node `pengumuman`. Admin cuma tulis di sini, gak perlu broadcast manual.
+// ============================================================================
+
+function formatTanggalPengumuman(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderPengumumanList() {
+  const el = document.getElementById("listPengumuman");
+  if (!el) return;
+
+  el.innerHTML =
+    cache.pengumuman
+      .map(
+        (p) => `
+          <div class="pengumuman-item">
+            <div>
+              <div class="pengumuman-item-title">${escapeHtml(p.judul || "(tanpa judul)")}</div>
+              <div class="pengumuman-item-body">${escapeHtml(p.isi || "")}</div>
+              <div class="pengumuman-item-date">${formatTanggalPengumuman(p.created_at)}</div>
+            </div>
+            <div class="table-actions">
+              <button class="link-btn is-danger" data-delete-pengumuman="${p.key}">Hapus</button>
+            </div>
+          </div>
+        `,
+      )
+      .join("") ||
+    `<p class="empty-note">Belum ada pengumuman. Buat yang pertama di atas.</p>`;
+}
+
+async function kirimPengumuman(judul, isi) {
+  const newKey = push(ref(db, "pengumuman")).key;
+  if (!newKey) throw new Error("Gagal membuat key pengumuman.");
+
+  await set(ref(db, `pengumuman/${newKey}`), {
+    judul,
+    isi,
+    created_at: Date.now(),
+  });
+}
+
+async function hapusPengumuman(key) {
+  await remove(ref(db, `pengumuman/${key}`));
+}
+
+document
+  .getElementById("btnKirimPengumuman")
+  ?.addEventListener("click", async () => {
+    const judulEl = document.getElementById("pengumumanJudul");
+    const isiEl = document.getElementById("pengumumanIsi");
+    const errEl = document.getElementById("pengumumanAddError");
+
+    const judul = judulEl?.value.trim() || "";
+    const isi = isiEl?.value.trim() || "";
+
+    if (!judul || !isi) {
+      if (errEl) errEl.textContent = "Isi judul dan isi pengumuman dulu.";
+      return;
+    }
+
+    if (errEl) errEl.textContent = "";
+
+    try {
+      await kirimPengumuman(judul, isi);
+      cache.pengumuman = await fetchPengumuman();
+      renderPengumumanList();
+      if (judulEl) judulEl.value = "";
+      if (isiEl) isiEl.value = "";
+    } catch (err) {
+      if (errEl) errEl.textContent = `Gagal mengirim pengumuman.\n${err}`;
+    }
+  });
+
+document
+  .getElementById("listPengumuman")
+  ?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-delete-pengumuman]");
+    if (!btn) return;
+
+    if (!confirm("Hapus pengumuman ini? Nasabah gak akan lihat lagi setelah dihapus.")) return;
+
+    try {
+      await hapusPengumuman(btn.dataset.deletePengumuman);
+      cache.pengumuman = await fetchPengumuman();
+      renderPengumumanList();
+    } catch (err) {
+      alert(`Gagal menghapus pengumuman.\n${err}`);
+    }
+  });
 
 // ============================================================================
 // Kategori view
@@ -2690,7 +2988,16 @@ async function showView(name) {
     );
     renderMonthlyReportPreview();
   }
+
+  if (name === "pengumuman") {
+    renderPengumumanList();
+  }
 }
+
+document.addEventListener("click", (e) => {
+  const jump = e.target.closest("[data-view-jump]");
+  if (jump) showView(jump.dataset.viewJump);
+});
 
 document
   .getElementById("navGroup")
