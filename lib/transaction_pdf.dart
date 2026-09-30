@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:public_file_saver/public_file_saver.dart';
 
 import 'share_or_download_helper.dart';
 
@@ -244,12 +243,12 @@ Future<void> downloadTransactionPdf({
   }
 
   try {
-    await PublicFileSaver().saveBytes(
-      bytes: bytes,
-      fileName: fileName,
+    final saved = await downloadFileBytes(
+      bytes,
+      fileName,
       mimeType: 'application/pdf',
-      subDir: 'Resik For School',
     );
+    if (!saved) throw Exception('unduhan ditolak browser');
 
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

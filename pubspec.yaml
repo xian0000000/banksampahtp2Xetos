@@ -45,7 +45,6 @@ dependencies:
   google_sign_in_platform_interface: ^3.1.0
   pdf: ^3.13.0
   share_plus: ^13.2.0   
-  public_file_saver: ^1.2.0
 
 dev_dependencies:
   flutter_test:

@@ -64,3 +64,13 @@ Future<bool> shareFile(
     return false;
   }
 }
+
+/// Fallback untuk platform non-web: tidak ada "unduh langsung" ke folder
+/// publik, jadi arahkan ke share sheet bawaan (Simpan ke Files, WhatsApp,
+/// dll). Di web, versi aslinya ada di share_or_download_helper_web.dart.
+Future<bool> downloadFileBytes(
+  Uint8List bytes,
+  String fileName, {
+  String mimeType = 'application/octet-stream',
+}) =>
+    shareFile(bytes, fileName, mimeType: mimeType);

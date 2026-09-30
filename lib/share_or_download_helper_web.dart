@@ -66,3 +66,23 @@ Future<bool> shareFile(
     return false;
   }
 }
+
+/// Unduh file langsung lewat browser (object URL + <a download>). Dipakai
+/// sebagai fallback di browser desktop yang tidak mendukung Web Share API.
+Future<bool> downloadFileBytes(
+  Uint8List bytes,
+  String fileName, {
+  String mimeType = 'application/octet-stream',
+}) async {
+  try {
+    final blob = html.Blob([bytes], mimeType);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    html.AnchorElement(href: url)
+      ..setAttribute('download', fileName)
+      ..click();
+    html.Url.revokeObjectUrl(url);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
