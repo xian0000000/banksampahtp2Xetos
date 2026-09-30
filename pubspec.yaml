@@ -64,6 +64,11 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
+  # Matiin Swift Package Manager buat iOS: plugin public_file_saver bikin
+  # resolve SPM gagal, jadi pakai CocoaPods aja.
+  config:
+    enable-swift-package-manager: false
+
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
