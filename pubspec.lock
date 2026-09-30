@@ -645,14 +645,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.1"
-  public_file_saver:
-    dependency: "direct main"
-    description:
-      name: public_file_saver
-      sha256: d710d6a1d63230d599a89f4258b6c717e3d25cc9a6e4cbdcbfd798e7a4dc575f
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.0"
   qr:
     dependency: transitive
     description:

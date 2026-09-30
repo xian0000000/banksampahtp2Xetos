@@ -1,11 +1,14 @@
 {
     "name": "Resik For Schooling",
     "short_name": "Resik",
-    "start_url": ".",
+    "start_url": "./",
+    "scope": "./",
     "display": "standalone",
-    "background_color": "#1E7A4C",
-    "theme_color": "#1E7A4C",
+    "background_color": "#F4F7F6",
+    "theme_color": "#23524E",
     "description": "Resik For Schooling — aplikasi bank sampah sekolah.",
+    "lang": "id",
+    "categories": ["education", "finance"],
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

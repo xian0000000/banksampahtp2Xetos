@@ -1,0 +1,75 @@
+# Simpan di BRANCH xina sebagai: .github/workflows/web-deploy.yml
+#
+# Alur: push ke xina -> build Flutter web -> hasilnya ditulis ke folder app/
+#       di branch main -> workflow Pages di main dijalankan ulang.
+#
+# Hasil akhir (1 link):
+#   https://<username>.github.io/<repo>/       -> Web Admin (isi branch main)
+#   https://<username>.github.io/<repo>/app/   -> Aplikasi Flutter (folder app/)
+
+name: Build Web -> main/app
+
+on:
+  push:
+    branches: [xina]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # buat push ke main
+  actions: write    # buat memicu ulang workflow Pages di main
+
+concurrency:
+  group: web-to-main
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout xina (source Flutter)
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build web
+        working-directory: src
+        run: |
+          flutter pub get
+          flutter build web --release --base-href "/${{ github.event.repository.name }}/app/"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site
+
+      - name: Ganti isi folder app/ di main
+        run: |
+          rm -rf site/app
+          mkdir -p site/app
+          cp -r src/build/web/. site/app/
+
+      - name: Commit & push ke main
+        working-directory: site
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A app
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan."
+          else
+            git commit -m "chore: update app (build dari xina ${GITHUB_SHA::7})"
+            git push origin main
+          fi
+
+      # Push pakai GITHUB_TOKEN TIDAK otomatis memicu workflow lain,
+      # jadi workflow Pages di main dipanggil manual di sini.
+      - name: Jalankan ulang deploy Pages di main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run static.yml --ref main --repo ${{ github.repository }}
