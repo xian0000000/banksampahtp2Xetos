@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "306920049631",
+    "firebase_url": "https://banksampahtp2xetos-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "banksampahtp2xetos",
+    "storage_bucket": "banksampahtp2xetos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:306920049631:android:8254df2ec8466c7f01d26a",
+        "android_client_info": {
+          "package_name": "banksampahterput2.etos.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "306920049631-7p6h9ibmiosjj30hi2kopuhid7hagqaq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "banksampahterput2.etos.com",
+            "certificate_hash": "45bb1a8373ca849f1150c40418836b735696755d"
+          }
+        },
+        {
+          "client_id": "306920049631-h0fn6hitv7u0ls6npqmn9j3rt7e0ubil.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0ymcEbGvD2x2B9kLNefHP2KJxHh60b8k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "306920049631-h0fn6hitv7u0ls6npqmn9j3rt7e0ubil.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

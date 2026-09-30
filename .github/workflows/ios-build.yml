@@ -1,0 +1,98 @@
+# Simpan sebagai: .github/workflows/ios-build.yml
+#
+# Cara pakai: push ke GitHub -> tab Actions -> "Build iOS" -> Run workflow.
+#
+# Mode 1 (signed = false, default): compile tanpa signing. Gratis, gak butuh
+#   akun Apple. Gunanya buat mastiin project lu beneran bisa build di iOS.
+#   Hasilnya BELUM bisa diinstall di iPhone.
+# Mode 2 (signed = true): bikin .ipa ber-signature (butuh Apple Developer
+#   Program + 5 secret di bawah). Hasilnya diupload sebagai artifact.
+
+name: Build iOS
+
+on:
+  # Otomatis jalan (mode tanpa signing) tiap push ke branch ini
+  push:
+    branches: [ios-build]
+  # Tombol "Run workflow" (buat mode signed) baru muncul di tab Actions
+  # kalau file ini sudah ada di default branch (main).
+  workflow_dispatch:
+    inputs:
+      signed:
+        description: "Build IPA ber-signature (butuh secrets Apple)"
+        type: boolean
+        default: false
+
+env:
+  # HARUS sama dengan bundle ID di Xcode project & Firebase iOS app
+  IOS_BUNDLE_ID: banksampahterput2.etos.com
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # ---------- Mode 1: tanpa signing ----------
+      - name: Build iOS (no codesign)
+        if: ${{ !inputs.signed }}
+        run: flutter build ios --release --no-codesign
+
+      # ---------- Mode 2: signed IPA ----------
+      # Secrets yang dibutuhkan (Settings -> Secrets and variables -> Actions):
+      #   IOS_CERT_P12_BASE64   sertifikat Apple Distribution (.p12) di-base64
+      #   IOS_CERT_PASSWORD     password .p12
+      #   IOS_PROFILE_BASE64    provisioning profile (.mobileprovision) di-base64
+      #   IOS_PROFILE_NAME      nama profile persis seperti di developer.apple.com
+      #   IOS_TEAM_ID           Team ID (10 karakter)
+      - name: Import signing certificate
+        if: ${{ inputs.signed }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERT_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_CERT_PASSWORD }}
+
+      - name: Install provisioning profile
+        if: ${{ inputs.signed }}
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "${{ secrets.IOS_PROFILE_BASE64 }}" | base64 --decode \
+            > "$HOME/Library/MobileDevice/Provisioning Profiles/app.mobileprovision"
+
+      - name: Write ExportOptions.plist
+        if: ${{ inputs.signed }}
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${{ secrets.IOS_TEAM_ID }}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${{ env.IOS_BUNDLE_ID }}</key>
+              <string>${{ secrets.IOS_PROFILE_NAME }}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Build signed IPA
+        if: ${{ inputs.signed }}
+        run: flutter build ipa --release --export-options-plist=ExportOptions.plist
+
+      - name: Upload IPA
+        if: ${{ inputs.signed }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bank-sampah-ipa
+          path: build/ios/ipa/*.ipa
