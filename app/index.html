@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <!--
+    Placeholder ini diganti otomatis oleh `flutter build web --base-href ...`.
+    Jangan diubah manual.
+  -->
+  <base href="/banksampahtp2Xetos/app/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Resik For Schooling — aplikasi bank sampah sekolah.">
+  <meta name="theme-color" content="#23524E">
+
+  <!-- iOS: mode "aplikasi" saat dibuka dari layar utama -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Resik">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Resik For Schooling</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #F4F7F6;            /* = AppColors.latar, biar gak ada kedip putih */
+      overscroll-behavior: none;       /* matikan efek bounce / pull-to-refresh */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+    }
+
+    /* ---------- Splash saat Flutter masih loading ---------- */
+    #splash {
+      position: fixed; inset: 0; z-index: 2147482000;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; background: #F4F7F6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #23524E; transition: opacity .35s ease;
+    }
+    #splash.hide { opacity: 0; pointer-events: none; }
+    #splash img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 6px 20px rgba(35,82,78,.18); }
+    #splash strong { font-size: 18px; letter-spacing: .2px; }
+    #splash .spin {
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 3px solid rgba(35,82,78,.18); border-top-color: #23524E;
+      animation: spin .9s linear infinite;
+    }
+    #splash small { opacity: 0; transition: opacity .4s; font-size: 13px; color: #5b6b68; }
+    #splash small.show { opacity: 1; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- Banner "Tambah ke Layar Utama" (khusus iPhone/iPad) ---------- */
+    #ios-install {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483000;
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transform: translateY(110%); transition: transform .4s ease;
+    }
+    #ios-install.show { transform: translateY(0); }
+    #ios-install .card {
+      display: flex; align-items: center; gap: 12px;
+      background: #fff; color: #1d2b29; border-radius: 16px; padding: 12px 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.22); border: 1px solid #E3E9E7;
+      max-width: 480px; margin: 0 auto;
+    }
+    #ios-install img { width: 44px; height: 44px; border-radius: 10px; flex: none; }
+    #ios-install .txt { flex: 1; font-size: 13px; line-height: 1.4; }
+    #ios-install .txt strong { display: block; font-size: 14px; margin-bottom: 2px; color: #23524E; }
+    #ios-install button {
+      flex: none; border: 0; background: #EAF5F2; color: #23524E; width: 30px; height: 30px;
+      border-radius: 50%; font-size: 15px; line-height: 30px; padding: 0; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Splash -->
+  <div id="splash">
+    <img src="icons/Icon-192.png" alt="">
+    <strong>Resik For Schooling</strong>
+    <div class="spin"></div>
+    <small id="splash-slow">Agak lama ya… tunggu sebentar atau muat ulang halaman.</small>
+  </div>
+
+  <!-- Banner pasang ke layar utama (hanya muncul di iOS, di luar mode aplikasi) -->
+  <div id="ios-install" role="dialog" aria-label="Pasang aplikasi">
+    <div class="card">
+      <img src="icons/Icon-192.png" alt="">
+      <div class="txt">
+        <strong>Pasang di layar utama</strong>
+        <span id="ios-install-steps"></span>
+      </div>
+      <button id="ios-install-close" type="button" aria-label="Tutup">✕</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var splash = document.getElementById('splash');
+      var slow = document.getElementById('splash-slow');
+      var banner = document.getElementById('ios-install');
+      var steps = document.getElementById('ios-install-steps');
+      var DISMISS_KEY = 'resik_ios_install_dismissed';
+      var DISMISS_MS = 7 * 24 * 60 * 60 * 1000; // sembunyikan 7 hari setelah ditutup
+
+      // ---- Splash: hilang setelah frame pertama Flutter tampil ----
+      var slowTimer = setTimeout(function () { slow.classList.add('show'); }, 12000);
+      function hideSplash() {
+        clearTimeout(slowTimer);
+        splash.classList.add('hide');
+        setTimeout(function () { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 500);
+        maybeShowInstallBanner();
+      }
+      window.addEventListener('flutter-first-frame', hideSplash, { once: true });
+
+      // ---- Banner iOS ----
+      var ua = navigator.userAgent || '';
+      var isIOS = /iPhone|iPad|iPod/i.test(ua) ||
+                  (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1); // iPadOS mode desktop
+      var isStandalone = window.navigator.standalone === true ||
+                         (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      // Browser bawaan aplikasi lain (WhatsApp, Instagram, dll) tidak punya token "Safari/"
+      // dan tidak bisa "Tambah ke Layar Utama".
+      var isInAppBrowser = isIOS && !/Safari\//.test(ua);
+
+      function wasDismissed() {
+        try {
+          var t = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+          return t && (Date.now() - t) < DISMISS_MS;
+        } catch (e) { return false; }
+      }
+
+      function maybeShowInstallBanner() {
+        if (!isIOS || isStandalone || wasDismissed()) return;
+        steps.innerHTML = isInAppBrowser
+          ? 'Buka link ini di <b>Safari</b> dulu, lalu ketuk <b>Bagikan</b> ' +
+            '(ikon kotak dengan panah ke atas) &rarr; <b>Tambah ke Layar Utama</b>.'
+          : 'Ketuk <b>Bagikan</b> (ikon kotak dengan panah ke atas; kalau tidak terlihat, ketuk <b>&middot;&middot;&middot;</b> dulu), ' +
+            'lalu pilih <b>Tambah ke Layar Utama</b>.';
+        setTimeout(function () { banner.classList.add('show'); }, 1500);
+      }
+
+      document.getElementById('ios-install-close').addEventListener('click', function () {
+        banner.classList.remove('show');
+        try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+      });
+
+      // Cadangan: kalau event first-frame tidak pernah datang, jangan biarkan splash nyangkut.
+      setTimeout(function () { if (document.getElementById('splash')) hideSplash(); }, 30000);
+    })();
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
