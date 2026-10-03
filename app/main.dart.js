@@ -35258,7 +35258,7 @@ $S:2}
 A.aMa.prototype={
 $1(a){var s=A.dR().b
 s=s==null?null:s.canvasKitBaseUrl
-return(s==null?"https://www.gstatic.com/flutter-canvaskit/af7e796e161ae0bb1ff0758c71a7105418bd9ded/":s)+a},
+return(s==null?"https://www.gstatic.com/flutter-canvaskit/692136cb6582dbfc5af3fb33c2515a069f2f66d0/":s)+a},
 $S:87}
 A.Vv.prototype={
 gp(a){var s=this.a
@@ -54668,7 +54668,7 @@ $0(){return A.xd(this.b,this.a.c)},
 $S:0}
 A.aNj.prototype={
 $1(a){var s,r,q,p,o,n,m=null,l=this.a,k=this.b,j=A.DE(new A.ps(B.bU,new A.lW(B.fP,1.5,B.f_),B.bU,B.bU),m,m),i=t.n_,h=A.b([],i)
-if(k!=null)B.m.O(h,A.b([new A.f5(34,34,A.b8H(k,B.PX)),new A.f5(10,m,m)],i))
+if(k!=null)B.m.O(h,A.b([new A.f5(48,48,A.b8H(k,B.PX)),new A.f5(12,m,m)],i))
 h.push(A.RR(A.b([A.fp("Resik For School",A.mV(m,B.fP,m,m,m,m,m,m,m,B.c4,m,m,17,m,B.cf,m,!0,m,m,m,m),m,m),new A.f5(m,2,m),A.fp("Bukti transaksi bank sampah sekolah",B.NC,m,m)],i),B.en))
 k=A.vI(h,B.hK,B.qI)
 h=A.DE(m,A.aUn(4),B.HV)
