@@ -100,11 +100,11 @@ pw.Widget _buildHeader(TransactionRecord tx, pw.MemoryImage? logo) {
           children: [
             if (logo != null) ...[
               pw.SizedBox(
-                width: 34,
-                height: 34,
+                width: 48,
+                height: 48,
                 child: pw.Image(logo, fit: pw.BoxFit.contain),
               ),
-              pw.SizedBox(width: 10),
+              pw.SizedBox(width: 12),
             ],
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
