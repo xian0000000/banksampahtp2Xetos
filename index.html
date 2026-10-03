@@ -127,6 +127,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M8 15h.01"/></svg>
         Keuangan
       </button>
+      <button class="nav-item" data-view="keuntungan">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+        Keuntungan
+      </button>
       <button class="nav-item" data-view="raport">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M9 12h6M9 16h6"/></svg>
         Raport
@@ -136,6 +140,13 @@
         Pengumuman
       </button>
     </nav>
+
+    <div class="sidebar-logout">
+      <button type="button" class="btn-logout" id="btnLogout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        Logout
+      </button>
+    </div>
 
     <div class="sidebar-footer">
       <div class="footer-card">
@@ -383,7 +394,7 @@
       <div class="main-header">
         <div>
           <div class="main-title">Kategori Sampah</div>
-          <div class="main-subtitle">Harga beli per kilogram — ubah harga atau tambah kategori baru</div>
+          <div class="main-subtitle">Harga beli (dibayar ke nasabah) dan harga jual (diterima dari lapak) per kilogram</div>
         </div>
       </div>
 
@@ -391,7 +402,8 @@
         <p class="field-label">Tambah Kategori Baru</p>
         <div class="search-row">
           <input type="text" id="kategoriNamaBaru" class="text-input" placeholder="Nama kategori, misal: Kaca" />
-          <input type="number" id="kategoriHargaBaru" class="text-input" placeholder="Harga per kg, misal: 1500" style="max-width:180px" />
+          <input type="number" id="kategoriHargaBaru" class="text-input" placeholder="Harga beli/kg (nasabah), misal: 1500" style="max-width:240px" />
+          <input type="number" id="kategoriHargaJualBaru" class="text-input" placeholder="Harga jual/kg (lapak), misal: 2000" style="max-width:240px" />
           <button id="btnTambahKategori" class="btn btn-primary" style="width:auto">Tambah</button>
         </div>
         <p class="empty-note" id="kategoriAddError"></p>
@@ -401,7 +413,7 @@
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Kategori</th><th>Harga / Kg</th><th>Total Disetor (30 hari)</th><th></th></tr>
+              <tr><th>Kategori</th><th>Harga Beli / Kg<br/><small>setor nasabah</small></th><th>Harga Jual / Kg<br/><small>jual ke lapak</small></th><th>Total Disetor (30 hari)</th><th></th></tr>
             </thead>
             <tbody id="tableKategori"></tbody>
           </table>
@@ -562,7 +574,7 @@
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-head">
           <span class="panel-title">Pengeluaran Sampah</span>
-          <span class="stat-label" style="margin:0">Catat sampah yang sudah ditimbang dan dikeluarkan ke pengepul/pihak lain</span>
+          <span class="stat-label" style="margin:0">Catat sampah yang dijual ke lapak/pengepul. Harga jual per kg bisa disesuaikan dengan harga hari itu dan akan tersimpan di riwayat.</span>
         </div>
         <div class="field-row">
           <div>
@@ -585,6 +597,14 @@
           <span class="stat-label" style="margin:0">Total sampah keluar</span>
           <span class="amount" id="wasteOutTotal">0 kg</span>
         </div>
+        <div class="total-row" style="margin-top:8px">
+          <span class="stat-label" style="margin:0">Pendapatan penjualan</span>
+          <span class="amount" id="wasteOutRevenue">Rp 0</span>
+        </div>
+        <div class="total-row" style="margin-top:8px">
+          <span class="stat-label" style="margin:0">Perkiraan laba (setelah modal beli dari nasabah)</span>
+          <span class="amount" id="wasteOutProfit">Rp 0</span>
+        </div>
         <button id="btnSimpanWasteOut" class="btn btn-primary" style="margin-top:14px">Simpan Pengeluaran Sampah</button>
       </div>
 
@@ -592,7 +612,7 @@
         <div class="table-scroll">
           <table class="data-table">
             <thead>
-              <tr><th>Kategori</th><th>Total Terkumpul</th><th>Estimasi Nilai</th></tr>
+              <tr><th>Kategori</th><th>Total Terkumpul</th><th>Nilai Modal<br/><small>harga beli</small></th><th>Potensi Nilai Jual<br/><small>harga jual sekarang</small></th></tr>
             </thead>
             <tbody id="tableStok"></tbody>
           </table>
@@ -603,7 +623,7 @@
         <div>
           <p class="field-label">Riwayat Pengeluaran Sampah</p>
           <p class="empty-note" style="margin:0" id="wasteOutHistorySummary">Memuat riwayat…</p>
-          <p class="empty-note" style="margin:4px 0 0">Unduh PDF per transaksi lewat tombol di setiap baris. Rekap bulanan lengkap ada di menu <strong>Raport</strong>.</p>
+          <p class="empty-note" style="margin:4px 0 0">Harga jual per kg yang tertera adalah harga saat transaksi dicatat, jadi tidak ikut berubah kalau harga kategori diganti. Tanda <strong>*</strong> = catatan lama yang harga jualnya tidak tercatat. Unduh PDF per transaksi lewat tombol di setiap baris; ringkasan laba ada di menu <strong>Keuntungan</strong>.</p>
         </div>
       </div>
 
@@ -611,7 +631,7 @@
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Total Berat</th><th>Estimasi Nilai</th><th>Catatan</th><th></th></tr>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian &amp; Harga Jual</th><th>Total Berat</th><th>Pendapatan</th><th>Laba</th><th>Catatan</th><th></th></tr>
             </thead>
             <tbody id="tableWasteOutHistory"></tbody>
           </table>
@@ -662,6 +682,54 @@
       </div>
     </section>
 
+    <!-- KEUNTUNGAN VIEW -->
+    <section class="view" id="view-keuntungan">
+      <div class="main-header">
+        <div>
+          <div class="main-title">Keuntungan</div>
+          <div class="main-subtitle">Hasil jual sampah ke lapak dibanding modal beli dari nasabah</div>
+        </div>
+      </div>
+
+      <div class="panel report-toolbar">
+        <div>
+          <p class="field-label">Periode</p>
+          <p class="empty-note" style="margin:0">Pendapatan = berat × harga jual saat dijual. Modal = berat × rata-rata harga beli dari nasabah. Persentase untung = laba ÷ modal.</p>
+        </div>
+        <div class="report-actions">
+          <select id="profitPeriod" class="select-input" style="margin:0"></select>
+          <button id="btnDownloadProfit" class="btn btn-primary">Download PDF</button>
+        </div>
+      </div>
+
+      <div class="report-stats" id="profitStats"></div>
+      <p class="empty-note" id="profitNote" style="margin:-4px 0 14px"></p>
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Keuntungan per Kategori</span></div>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Kategori</th><th>Terjual</th><th>Rata-rata Harga Beli / kg</th><th>Rata-rata Harga Jual / kg</th><th>Modal</th><th>Pendapatan</th><th>Laba</th><th>% Untung</th></tr>
+            </thead>
+            <tbody id="profitKategoriBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Rincian Penjualan</span></div>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian &amp; Harga Jual</th><th>Pendapatan</th><th>Modal</th><th>Laba</th><th>% Untung</th></tr>
+            </thead>
+            <tbody id="profitTxBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- RAPORT VIEW -->
     <section class="view" id="view-raport">
       <div class="main-header">
@@ -704,9 +772,22 @@
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian</th><th>Total Berat</th><th>Estimasi Nilai</th><th>Catatan</th></tr>
+              <tr><th>Tanggal</th><th>Pengepul / Penerima</th><th>Rincian &amp; Harga Jual</th><th>Total Berat</th><th>Pendapatan</th><th>Laba</th><th>Catatan</th></tr>
             </thead>
             <tbody id="monthlyWasteOutBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Rincian per Nasabah Bulan Ini</span></div>
+        <p class="empty-note" id="monthlyNasabahSummary" style="margin-top:-6px">Memuat…</p>
+        <div class="table-scroll">
+          <table class="data-table data-table--wide">
+            <thead>
+              <tr><th>Nama</th><th>Kelas / Tipe</th><th>Sampah Disetor</th><th>Total Setoran (Rp)</th><th>Total Ditarik (Rp)</th><th>Jumlah Penarikan</th></tr>
+            </thead>
+            <tbody id="monthlyNasabahBody"></tbody>
           </table>
         </div>
       </div>
@@ -714,7 +795,7 @@
       <div class="panel report-toolbar">
         <div>
           <p class="field-label">Rekap Nasabah</p>
-          <p class="empty-note" style="margin:0">Total sampah &amp; uang setiap nasabah, sepanjang waktu.</p>
+          <p class="empty-note" style="margin:0">Total sampah, setoran, &amp; penarikan setiap nasabah, sepanjang waktu.</p>
         </div>
         <div class="report-actions">
           <button id="btnDownloadRekapNasabah" class="btn btn-primary">Download PDF</button>
@@ -725,10 +806,10 @@
         <div class="table-scroll">
           <table class="data-table data-table--wide">
             <thead>
-              <tr><th>Nama</th><th>Kelas / Tipe</th><th>Total Sampah (kg)</th><th>Total Setoran (Rp)</th><th>Saldo Saat Ini</th><th>Rincian</th></tr>
+              <tr><th>Nama</th><th>Kelas / Tipe</th><th>Total Sampah (kg)</th><th>Total Setoran (Rp)</th><th>Total Penarikan (Rp)</th><th>Saldo Saat Ini</th><th>Rincian</th></tr>
             </thead>
             <tbody id="tableRekapNasabah">
-              <tr class="loading-row"><td colspan="6">Memuat data…</td></tr>
+              <tr class="loading-row"><td colspan="7">Memuat data…</td></tr>
             </tbody>
           </table>
         </div>

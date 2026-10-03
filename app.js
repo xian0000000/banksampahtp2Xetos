@@ -86,6 +86,9 @@ authGoogleBtn.addEventListener("click", async () => {
   setAuthNote("");
   try {
     const provider = new GoogleAuthProvider();
+    // Selalu tampilkan pilihan akun, supaya setelah logout admin bisa
+    // masuk dengan akun Google yang berbeda.
+    provider.setCustomParameters({ prompt: "select_account" });
     await signInWithPopup(auth, provider);
     // Hasilnya ditangani di onAuthStateChanged di bawah.
   } catch (err) {
@@ -95,6 +98,23 @@ authGoogleBtn.addEventListener("click", async () => {
     }
   } finally {
     authGoogleBtn.disabled = false;
+  }
+});
+
+// --- Logout ---
+document.getElementById("btnLogout")?.addEventListener("click", async () => {
+  if (!confirm("Yakin ingin logout dari admin?")) return;
+  const btn = document.getElementById("btnLogout");
+  if (btn) btn.disabled = true;
+  try {
+    await signOut(auth);
+    // Muat ulang supaya semua data & state admin (cache, form, tab aktif)
+    // bersih. Layar login ditampilkan oleh onAuthStateChanged.
+    window.location.reload();
+  } catch (err) {
+    console.error(err);
+    alert("Gagal logout. Cek koneksi internet lalu coba lagi.");
+    if (btn) btn.disabled = false;
   }
 });
 
@@ -150,10 +170,12 @@ onAuthStateChanged(auth, async (user) => {
 // Kategori
 // ============================================================================
 
+// `harga`      = harga BELI: yang dibayarkan ke nasabah saat setor.
+// `harga_jual` = harga JUAL: yang diterima saat sampah dijual ke lapak/pengepul.
 const DEFAULT_KATEGORI = [
-  { nama: "Plastik", harga: 3000 },
-  { nama: "Kertas", harga: 2000 },
-  { nama: "Logam", harga: 5000 },
+  { nama: "Plastik", harga: 3000, harga_jual: 3000 },
+  { nama: "Kertas", harga: 2000, harga_jual: 2000 },
+  { nama: "Logam", harga: 5000, harga_jual: 5000 },
 ];
 
 const DONUT_COLORS = [
@@ -185,6 +207,39 @@ function warnaKategori(nama) {
 function hargaKategoriOf(nama) {
   return cache.kategori.find((k) => k.nama === nama)?.harga || 0;
 }
+
+// Harga jual ke lapak. Kategori lama yang belum punya harga_jual dianggap
+// sama dengan harga beli (laba 0) sampai admin mengisinya di menu Kategori.
+function hargaJualKategoriOf(nama) {
+  const k = cache.kategori.find((kat) => kat.nama === nama);
+  if (!k) return 0;
+  return Number(k.harga_jual) > 0 ? Number(k.harga_jual) : Number(k.harga) || 0;
+}
+
+// Modal per kg = rata-rata tertimbang harga beli semua setoran kategori itu
+// sampai tanggal penjualan. Dipakai untuk menghitung laba.
+function avgModalPerKg(kategori, tanggalIso, flat = cache.flat) {
+  const batas = tanggalIso ? new Date(tanggalIso) : new Date();
+  let kgTotal = 0;
+  let rpTotal = 0;
+  (flat || []).forEach((t) => {
+    if (t.tipe !== "Setor" || !t.tanggal) return;
+    if (new Date(t.tanggal) > batas) return;
+    getSetorItems(t).forEach((item) => {
+      if (item.kategori !== kategori) return;
+      const kg = Number(item.berat_kg) || 0;
+      const harga = Number(item.harga_per_kg) || hargaKategoriOf(item.kategori);
+      kgTotal += kg;
+      rpTotal += kg * harga;
+    });
+  });
+  return kgTotal > 0 ? rpTotal / kgTotal : hargaKategoriOf(kategori);
+}
+
+const formatPct = (n) =>
+  n == null || !Number.isFinite(n)
+    ? "-"
+    : `${n.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%`;
 
 // ============================================================================
 // Helpers
@@ -230,6 +285,62 @@ function escapeHtml(str) {
     '"': "&quot;",
     "'": "&#39;",
   })[ch]);
+}
+
+// ============================================================================
+// Logo & kop PDF — dipakai SEMUA PDF yang diunduh dari admin
+// ============================================================================
+
+let pdfLogoDataUrl = null;
+
+async function preloadPdfLogo() {
+  try {
+    const res = await fetch("logo.png");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    pdfLogoDataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    // Logo cuma hiasan kop — kalau gagal dimuat, PDF tetap harus jadi.
+    console.warn("Logo untuk PDF gagal dimuat:", err);
+  }
+}
+preloadPdfLogo();
+
+// Gambar kop (logo + nama + judul + tanggal dibuat) dan kembalikan posisi y
+// untuk konten berikutnya. Nilai kembaliannya sama dengan layout lama (43mm)
+// jadi sisa isi PDF tidak bergeser.
+function drawPdfHeader(doc, margin, title) {
+  const logoSize = 24;
+  let textX = margin;
+  if (pdfLogoDataUrl) {
+    try {
+      doc.addImage(pdfLogoDataUrl, "PNG", margin, 10, logoSize, logoSize);
+      textX = margin + logoSize + 4;
+    } catch (err) {
+      console.warn("Gagal menempel logo ke PDF:", err);
+    }
+  }
+
+  let y = 18;
+  doc.setTextColor(16, 36, 27);
+  doc.setFontSize(18);
+  doc.setFont(undefined, "bold");
+  doc.text("Resik For School", textX, y);
+  y += 8;
+  doc.setFontSize(13);
+  doc.text(title, textX, y);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 106);
+  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, textX, y);
+  y += 10;
+  return y;
 }
 
 // ============================================================================
@@ -1610,8 +1721,11 @@ function renderKategoriTable(flat) {
               <input type="text" class="kategori-nama-input text-input" data-key="${k.key}" value="${k.nama}" />
             </td>
             <td>
+              <input type="number" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
+            </td>
+            <td>
               <div class="price-edit-row">
-                <input type="number" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
+                <input type="number" class="kategori-harga-jual-input" data-key="${k.key}" value="${hargaJualKategoriOf(k.nama)}" />
                 <button class="link-btn" data-save-kategori="${k.key}">Simpan</button>
               </div>
             </td>
@@ -1629,7 +1743,7 @@ function renderKategoriTable(flat) {
       .join("") ||
     `
       <tr class="loading-row">
-        <td colspan="4">
+        <td colspan="5">
           Belum ada kategori.
           Tambah dulu di atas.
         </td>
@@ -1640,6 +1754,7 @@ function renderKategoriTable(flat) {
 async function tambahKategori(
   nama,
   harga,
+  hargaJual,
 ) {
   const newKey =
     push(ref(db, "kategori")).key;
@@ -1655,15 +1770,17 @@ async function tambahKategori(
     {
       nama,
       harga,
+      harga_jual: hargaJual,
     },
   );
 }
 
-async function simpanKategori(key, nama, harga) {
+async function simpanKategori(key, nama, harga, hargaJual) {
   const old = cache.kategori.find((k) => k.key === key);
   const updates = {
     [`kategori/${key}/nama`]: nama,
     [`kategori/${key}/harga`]: harga,
+    [`kategori/${key}/harga_jual`]: hargaJual,
   };
 
   // Saat nama kategori diubah, ikut migrasikan nama kategori pada transaksi
@@ -1710,6 +1827,13 @@ document
           ).value,
         );
 
+      const hargaJual =
+        parseFloat(
+          document.getElementById(
+            "kategoriHargaJualBaru",
+          ).value,
+        );
+
       const errorEl =
         document.getElementById(
           "kategoriAddError",
@@ -1724,10 +1848,12 @@ document
       if (
         !nama ||
         !Number.isFinite(harga) ||
-        harga <= 0
+        harga <= 0 ||
+        !Number.isFinite(hargaJual) ||
+        hargaJual <= 0
       ) {
         errorEl.textContent =
-          "Isi nama kategori dan harga per kg yang valid.";
+          "Isi nama kategori, harga beli, dan harga jual per kg yang valid.";
 
         errorEl.classList.add(
           "field-error",
@@ -1757,7 +1883,12 @@ document
         await tambahKategori(
           nama,
           harga,
+          hargaJual,
         );
+
+        document.getElementById(
+          "kategoriHargaJualBaru",
+        ).value = "";
 
         document.getElementById(
           "kategoriNamaBaru",
@@ -1813,8 +1944,10 @@ document
     const hargaInput = document.querySelector(`.kategori-harga-input[data-key="${key}"]`);
     const nama = namaInput?.value.trim();
     const harga = parseFloat(hargaInput?.value);
-    if (!nama || !Number.isFinite(harga) || harga <= 0) {
-      alert("Nama dan harga kategori harus valid.");
+    const hargaJualInput = document.querySelector(`.kategori-harga-jual-input[data-key="${key}"]`);
+    const hargaJual = parseFloat(hargaJualInput?.value);
+    if (!nama || !Number.isFinite(harga) || harga <= 0 || !Number.isFinite(hargaJual) || hargaJual <= 0) {
+      alert("Nama, harga beli, dan harga jual kategori harus valid.");
       return;
     }
     const duplicate = cache.kategori.some((k) => k.key !== key && k.nama.toLowerCase() === nama.toLowerCase());
@@ -1824,7 +1957,7 @@ document
     }
     saveBtn.textContent = "…";
     try {
-      await simpanKategori(key, nama, harga);
+      await simpanKategori(key, nama, harga, hargaJual);
       await loadDashboard();
       renderKategoriTable(cache.flat);
     } catch (err) {
@@ -1862,6 +1995,8 @@ function renderStokTable(flat) {
 
         const nilai =
           totalKg * k.harga;
+        const nilaiJual =
+          totalKg * hargaJualKategoriOf(k.nama);
 
         const warna =
           warnaKategori(k.nama);
@@ -1887,13 +2022,17 @@ function renderStokTable(flat) {
             <td>
               ${formatRp(nilai)}
             </td>
+
+            <td>
+              ${formatRp(nilaiJual)}
+            </td>
           </tr>
         `;
       })
       .join("") ||
     `
       <tr class="loading-row">
-        <td colspan="3">
+        <td colspan="4">
           Belum ada kategori.
         </td>
       </tr>
@@ -1907,16 +2046,74 @@ function renderStokTable(flat) {
 // Rincian per-kategori (berat & estimasi nilai) untuk satu transaksi
 // pengeluaran sampah — dipakai di tabel riwayat maupun PDF supaya
 // datanya konsisten di kedua tempat.
+//
+// Harga jual & modal per kg dibaca dari SNAPSHOT yang disimpan saat
+// pengeluaran dicatat, jadi riwayat tidak ikut berubah ketika harga kategori
+// diubah belakangan. Catatan lama (sebelum ada snapshot) tidak punya data
+// itu — untuk yang lama dipakai harga jual saat ini dan ditandai
+// `estimasi: true` supaya kelihatan di tabel & PDF.
 function wasteOutItemDetails(tx) {
   return getWasteOutItems(tx).map((item) => {
     const kg = Number(item.berat_kg) || 0;
-    const harga = hargaKategoriOf(item.kategori);
+    const tercatat = Number(item.harga_jual_per_kg) > 0;
+    const hargaJual = tercatat
+      ? Number(item.harga_jual_per_kg)
+      : hargaJualKategoriOf(item.kategori);
+    const modalPerKg =
+      item.modal_per_kg != null && Number.isFinite(Number(item.modal_per_kg))
+        ? Number(item.modal_per_kg)
+        : avgModalPerKg(item.kategori, tx.tanggal);
+    const nilai = kg * hargaJual;
+    const modal = kg * modalPerKg;
     return {
       kategori: item.kategori || "Lainnya",
       kg,
-      nilai: kg * harga,
+      hargaJual,
+      modalPerKg,
+      nilai,
+      modal,
+      laba: nilai - modal,
+      estimasi: !tercatat,
     };
   });
+}
+
+// Ringkasan satu transaksi pengeluaran: pendapatan, modal, laba, % untung.
+function wasteOutSummary(tx) {
+  const details = wasteOutItemDetails(tx);
+  const kg = details.reduce((sum, d) => sum + d.kg, 0);
+  const nilai = details.reduce((sum, d) => sum + d.nilai, 0);
+  const modal = details.reduce((sum, d) => sum + d.modal, 0);
+  const laba = nilai - modal;
+  return {
+    details,
+    kg,
+    nilai,
+    modal,
+    laba,
+    persen: modal > 0 ? (laba / modal) * 100 : null,
+    adaEstimasi: details.some((d) => d.estimasi),
+  };
+}
+
+// Rincian per kategori lengkap dengan harga jual per kg saat itu.
+function wasteOutRincianHtml(details) {
+  if (!details.length) return "-";
+  return details
+    .map(
+      (d) =>
+        `<div class="rincian-line">${escapeHtml(d.kategori)} ${formatKg(d.kg)} × <strong>${formatRp(d.hargaJual)}</strong>/kg${
+          d.estimasi
+            ? ' <span class="estimasi-tag" title="Harga jual saat itu tidak tercatat — memakai harga jual kategori saat ini">*</span>'
+            : ""
+        }</div>`,
+    )
+    .join("");
+}
+
+function wasteOutLabaHtml(sum) {
+  const cls = sum.laba < 0 ? "profit-neg" : "profit-pos";
+  return `<span class="${cls}">${formatRp(sum.laba)}</span><br/><small>${formatPct(sum.persen)}</small>`;
 }
 
 function wasteOutHistoryRowHtml(tx) {
@@ -1925,20 +2122,16 @@ function wasteOutHistoryRowHtml(tx) {
     ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
     : "-";
 
-  const details = wasteOutItemDetails(tx);
-  const rincian = details
-    .map((d) => `${escapeHtml(d.kategori)} ${formatKg(d.kg)}`)
-    .join(", ") || "-";
-  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
-  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+  const sum = wasteOutSummary(tx);
 
   return `
     <tr>
       <td>${dateStr}</td>
       <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
-      <td>${rincian}</td>
-      <td>${formatKg(totalKg)}</td>
-      <td>${formatRp(totalNilai)}</td>
+      <td>${wasteOutRincianHtml(sum.details)}</td>
+      <td>${formatKg(sum.kg)}</td>
+      <td>${formatRp(sum.nilai)}</td>
+      <td>${wasteOutLabaHtml(sum)}</td>
       <td>${escapeHtml(tx.catatan || "-")}</td>
       <td class="table-actions">
         <button class="link-btn" data-download-wasteout="${tx.txId}">Download PDF</button>
@@ -1957,20 +2150,16 @@ function wasteOutHistoryRowHtmlNoActions(tx) {
     ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
     : "-";
 
-  const details = wasteOutItemDetails(tx);
-  const rincian = details
-    .map((d) => `${escapeHtml(d.kategori)} ${formatKg(d.kg)}`)
-    .join(", ") || "-";
-  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
-  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+  const sum = wasteOutSummary(tx);
 
   return `
     <tr>
       <td>${dateStr}</td>
       <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
-      <td>${rincian}</td>
-      <td>${formatKg(totalKg)}</td>
-      <td>${formatRp(totalNilai)}</td>
+      <td>${wasteOutRincianHtml(sum.details)}</td>
+      <td>${formatKg(sum.kg)}</td>
+      <td>${formatRp(sum.nilai)}</td>
+      <td>${wasteOutLabaHtml(sum)}</td>
       <td>${escapeHtml(tx.catatan || "-")}</td>
     </tr>
   `;
@@ -1989,7 +2178,7 @@ function renderWasteOutHistory(flat) {
     rows.map(wasteOutHistoryRowHtml).join("") ||
     `
       <tr class="loading-row">
-        <td colspan="7">Belum ada pengeluaran sampah tercatat.</td>
+        <td colspan="8">Belum ada pengeluaran sampah tercatat.</td>
       </tr>
     `;
 
@@ -2046,29 +2235,15 @@ function downloadWasteOutTransactionPdf(tx) {
   const dateStr = date
     ? `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
     : "-";
-  const details = wasteOutItemDetails(tx);
-  const totalKg = details.reduce((sum, d) => sum + d.kg, 0);
-  const totalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
+  const { details, kg: totalKg, nilai: totalNilai, adaEstimasi } = wasteOutSummary(tx);
 
-  doc.setTextColor(16, 36, 27);
-  doc.setFontSize(18);
-  doc.setFont(undefined, "bold");
-  doc.text("Resik For School", margin, y);
-  y += 8;
-  doc.setFontSize(13);
-  doc.text("Bukti Pengeluaran Sampah", margin, y);
-  y += 7;
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 112, 106);
-  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
-  y += 10;
+  y = drawPdfHeader(doc, margin, "Bukti Pengeluaran Sampah");
 
   const cards = [
     ["Tanggal", dateStr],
     ["Pengepul / Penerima", String(tx.pengepul || tx.penerima || "-")],
     ["Total Berat", formatKg(totalKg)],
-    ["Estimasi Nilai", formatRp(totalNilai)],
+    ["Total Penjualan", formatRp(totalNilai)],
   ];
   const cardW = 43;
   cards.forEach(([label, value], i) => {
@@ -2097,8 +2272,9 @@ function downloadWasteOutTransactionPdf(tx) {
   doc.rect(margin, y, 180, 7, "F");
   doc.setFontSize(8);
   doc.text("Kategori", margin + 3, y + 5);
-  doc.text("Berat", margin + 100, y + 5);
-  doc.text("Estimasi Nilai", margin + 140, y + 5);
+  doc.text("Berat", margin + 60, y + 5);
+  doc.text("Harga Jual / kg", margin + 100, y + 5);
+  doc.text("Subtotal", margin + 145, y + 5);
   y += 7;
   doc.setFont(undefined, "normal");
   doc.setTextColor(45, 60, 53);
@@ -2115,13 +2291,30 @@ function downloadWasteOutTransactionPdf(tx) {
       doc.rect(margin, y, 180, 7, "F");
     }
     doc.setFontSize(8);
-    doc.text(d.kategori, margin + 3, y + 5);
-    doc.text(formatKg(d.kg), margin + 100, y + 5);
-    doc.text(formatRp(d.nilai), margin + 140, y + 5);
+    doc.text(`${d.kategori}${d.estimasi ? " *" : ""}`, margin + 3, y + 5);
+    doc.text(formatKg(d.kg), margin + 60, y + 5);
+    doc.text(formatRp(d.hargaJual), margin + 100, y + 5);
+    doc.text(formatRp(d.nilai), margin + 145, y + 5);
     y += 7;
   });
 
-  y += 6;
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.setFontSize(8.5);
+  doc.text("Total", margin + 3, y + 5);
+  doc.text(formatKg(totalKg), margin + 60, y + 5);
+  doc.text(formatRp(totalNilai), margin + 145, y + 5);
+  doc.setFont(undefined, "normal");
+  y += 9;
+
+  if (adaEstimasi) {
+    doc.setFontSize(7);
+    doc.setTextColor(120, 130, 125);
+    doc.text("* Harga jual saat transaksi tidak tercatat; memakai harga jual kategori saat dokumen dibuat.", margin, y);
+    y += 5;
+  }
+
+  y += 4;
   doc.setFontSize(9.5);
   doc.setFont(undefined, "bold");
   doc.setTextColor(16, 36, 27);
@@ -2397,6 +2590,50 @@ function getMonthlyData(flat, key) {
   };
 }
 
+// Rincian per nasabah untuk satu bulan: berapa kg & Rp yang disetor dan
+// berapa Rp yang ditarik. Hanya nasabah yang punya setor/tarik di bulan itu.
+// Angka Rp memakai total_rp yang sama dengan total bulanan, jadi jumlah semua
+// baris selalu cocok dengan "Uang masuk" dan "Uang ditarik" di atas.
+function getMonthlyNasabahRows(tx, users) {
+  const map = {};
+  tx.forEach((t) => {
+    if (t.isWasteOut || !t.uid) return;
+    if (t.tipe !== "Setor" && t.tipe !== "Tarik") return;
+    const u = users?.[t.uid] || {};
+    const row = (map[t.uid] ||= {
+      uid: t.uid,
+      nama: u.nama || t.nama || "-",
+      kelas: u.kelas || t.kelas || "-",
+      tipe: u.tipe || "Siswa",
+      kg: 0,
+      setorRp: 0,
+      tarikRp: 0,
+      tarikCount: 0,
+    });
+    if (t.tipe === "Setor") {
+      row.kg += totalBeratTx(t);
+      row.setorRp += Number(t.total_rp) || 0;
+    } else {
+      row.tarikRp += Number(t.total_rp) || 0;
+      row.tarikCount += 1;
+    }
+  });
+  const rows = Object.values(map).sort((a, b) =>
+    String(a.nama).localeCompare(String(b.nama), "id"),
+  );
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.kg += r.kg;
+      acc.setorRp += r.setorRp;
+      acc.tarikRp += r.tarikRp;
+      acc.tarikCount += r.tarikCount;
+      return acc;
+    },
+    { kg: 0, setorRp: 0, tarikRp: 0, tarikCount: 0 },
+  );
+  return { rows, totals };
+}
+
 function renderMonthlyReportPreview() {
   const input = document.getElementById("reportMonth");
   const key = input?.value || monthKey(new Date());
@@ -2418,6 +2655,8 @@ function renderMonthlyReportPreview() {
     <div class="report-stat"><span>Saldo bersih arus transaksi</span><strong>${formatRp(data.net)}</strong></div>
     <div class="report-stat"><span>Nasabah aktif</span><strong>${data.activeCustomers}</strong></div>
     <div class="report-stat"><span>Total transaksi</span><strong>${data.tx.length}</strong></div>
+    <div class="report-stat"><span>Pendapatan jual ke lapak</span><strong>${formatRp(wasteOutTotals(data.wasteOut).nilai)}</strong></div>
+    <div class="report-stat"><span>Laba penjualan</span><strong>${formatRp(wasteOutTotals(data.wasteOut).laba)} (${formatPct(wasteOutTotals(data.wasteOut).persen)})</strong></div>
   `;
 
   document.getElementById("monthlyCategoryBody").innerHTML = categoryRows;
@@ -2429,17 +2668,53 @@ function renderMonthlyReportPreview() {
   if (wasteOutBodyEl) {
     wasteOutBodyEl.innerHTML =
       wasteOutRows.map(wasteOutHistoryRowHtmlNoActions).join("") ||
-      `<tr class="loading-row"><td colspan="6">Belum ada pengeluaran sampah pada bulan ini.</td></tr>`;
+      `<tr class="loading-row"><td colspan="7">Belum ada pengeluaran sampah pada bulan ini.</td></tr>`;
   }
   const wasteOutSummaryEl = document.getElementById("monthlyWasteOutSummary");
   if (wasteOutSummaryEl) {
     const totalNilaiOut = wasteOutRows.reduce(
-      (sum, tx) => sum + wasteOutItemDetails(tx).reduce((s, d) => s + d.nilai, 0),
+      (sum, tx) => sum + wasteOutSummary(tx).nilai,
+      0,
+    );
+    const totalLabaOut = wasteOutRows.reduce(
+      (sum, tx) => sum + wasteOutSummary(tx).laba,
       0,
     );
     wasteOutSummaryEl.textContent = wasteOutRows.length
-      ? `${wasteOutRows.length} catatan • total ${formatKg(data.totalOutKg)} dikeluarkan • estimasi nilai ${formatRp(totalNilaiOut)} pada ${data.label}.`
+      ? `${wasteOutRows.length} catatan • total ${formatKg(data.totalOutKg)} dikeluarkan • nilai jual ${formatRp(totalNilaiOut)} • laba ${formatRp(totalLabaOut)} pada ${data.label}.`
       : `Belum ada pengeluaran sampah pada ${data.label}.`;
+  }
+
+  const nasabahBodyEl = document.getElementById("monthlyNasabahBody");
+  if (nasabahBodyEl) {
+    const { rows: nasabahRows, totals: nt } = getMonthlyNasabahRows(data.tx, cache.users);
+    nasabahBodyEl.innerHTML = nasabahRows.length
+      ? nasabahRows
+          .map(
+            (r) => `<tr>
+              <td><strong>${escapeHtml(r.nama)}</strong></td>
+              <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
+              <td>${formatKg(r.kg)}</td>
+              <td style="font-family:var(--font-mono)">${formatRp(r.setorRp)}</td>
+              <td style="font-family:var(--font-mono)">${formatRp(r.tarikRp)}</td>
+              <td>${r.tarikCount ? `${r.tarikCount}x` : "-"}</td>
+            </tr>`,
+          )
+          .join("") +
+        `<tr style="font-weight:700">
+          <td colspan="2">Total (${nasabahRows.length} nasabah)</td>
+          <td>${formatKg(nt.kg)}</td>
+          <td style="font-family:var(--font-mono)">${formatRp(nt.setorRp)}</td>
+          <td style="font-family:var(--font-mono)">${formatRp(nt.tarikRp)}</td>
+          <td>${nt.tarikCount}x</td>
+        </tr>`
+      : `<tr class="loading-row"><td colspan="6">Belum ada setoran atau penarikan nasabah pada bulan ini.</td></tr>`;
+    const nasabahSummaryEl = document.getElementById("monthlyNasabahSummary");
+    if (nasabahSummaryEl) {
+      nasabahSummaryEl.textContent = nasabahRows.length
+        ? `${nasabahRows.length} nasabah bertransaksi pada ${data.label} • total setoran ${formatRp(nt.setorRp)} • total ditarik ${formatRp(nt.tarikRp)}.`
+        : `Belum ada setoran atau penarikan nasabah pada ${data.label}.`;
+    }
   }
 
   document.getElementById("monthlyAnalysis").textContent = data.tx.length
@@ -2515,19 +2790,7 @@ async function downloadMonthlyPdf() {
   const margin = 15;
   let y = 18;
 
-  doc.setTextColor(16, 36, 27);
-  doc.setFontSize(18);
-  doc.setFont(undefined, "bold");
-  doc.text("Resik For School", margin, y);
-  y += 8;
-  doc.setFontSize(13);
-  doc.text(`Rekapan Bulanan — ${data.label}`, margin, y);
-  y += 7;
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 112, 106);
-  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
-  y += 10;
+  y = drawPdfHeader(doc, margin, `Rekapan Bulanan — ${data.label}`);
 
   const cards = [
     ["Sampah masuk", formatKg(data.totalKg)],
@@ -2620,8 +2883,8 @@ async function downloadMonthlyPdf() {
   doc.text("Tanggal", margin + 3, y + 5);
   doc.text("Pengepul/Penerima", margin + 28, y + 5);
   doc.text("Total Kg", margin + 100, y + 5);
-  doc.text("Estimasi Nilai", margin + 125, y + 5);
-  doc.text("Catatan", margin + 155, y + 5);
+  doc.text("Nilai Jual", margin + 125, y + 5);
+  doc.text("Laba", margin + 155, y + 5);
   y += 7;
   doc.setTextColor(45, 60, 53);
 
@@ -2640,10 +2903,10 @@ async function downloadMonthlyPdf() {
     const txDateStr = txDate
       ? `${txDate.getDate()}/${txDate.getMonth() + 1}/${txDate.getFullYear()}`
       : "-";
-    const details = wasteOutItemDetails(tx);
-    const rowTotalKg = details.reduce((sum, d) => sum + d.kg, 0);
-    const rowTotalNilai = details.reduce((sum, d) => sum + d.nilai, 0);
-    const catatanText = tx.catatan || "-";
+    const rowSum = wasteOutSummary(tx);
+    const rowTotalKg = rowSum.kg;
+    const rowTotalNilai = rowSum.nilai;
+    const labaText = `${formatRp(rowSum.laba)} (${formatPct(rowSum.persen)})`;
 
     if (y > 280) {
       doc.addPage();
@@ -2659,9 +2922,106 @@ async function downloadMonthlyPdf() {
     doc.text(String(tx.pengepul || tx.penerima || "-").slice(0, 30), margin + 28, y + 5);
     doc.text(formatKg(rowTotalKg), margin + 100, y + 5);
     doc.text(formatRp(rowTotalNilai), margin + 125, y + 5);
-    doc.text(catatanText.slice(0, 18), margin + 155, y + 5);
+    doc.text(labaText.slice(0, 24), margin + 155, y + 5);
     y += 7;
   });
+
+  if (wasteOutRows.length) {
+    const tot = wasteOutRows.reduce(
+      (acc, tx) => {
+        const r = wasteOutSummary(tx);
+        acc.nilai += r.nilai;
+        acc.modal += r.modal;
+        return acc;
+      },
+      { nilai: 0, modal: 0 },
+    );
+    const laba = tot.nilai - tot.modal;
+    y += 3;
+    if (y > 270) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(16, 36, 27);
+    doc.text(
+      `Penjualan ${formatRp(tot.nilai)}  |  Modal ${formatRp(tot.modal)}  |  Laba ${formatRp(laba)} (${formatPct(tot.modal > 0 ? (laba / tot.modal) * 100 : null)})`,
+      margin,
+      y + 4,
+    );
+    doc.setFont(undefined, "normal");
+    y += 8;
+  }
+
+  // --- Rincian per nasabah (setoran & total yang ditarik)
+  const { rows: nasabahRows, totals: nasabahTot } = getMonthlyNasabahRows(data.tx, cache.users);
+  y += 8;
+  if (y > 250) {
+    doc.addPage();
+    y = 18;
+  }
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Rincian per Nasabah", margin, y);
+  y += 5;
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Nama", margin + 3, y + 5);
+  doc.text("Kelas / Tipe", margin + 55, y + 5);
+  doc.text("Disetor", margin + 100, y + 5);
+  doc.text("Total Setoran", margin + 122, y + 5);
+  doc.text("Total Ditarik", margin + 152, y + 5);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(45, 60, 53);
+
+  if (!nasabahRows.length) {
+    doc.setFontSize(8.5);
+    doc.text("Belum ada setoran atau penarikan nasabah pada bulan ini.", margin + 3, y + 5);
+    y += 10;
+  }
+
+  nasabahRows.forEach((r, i) => {
+    if (y > 278) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.setFontSize(8);
+    doc.setTextColor(45, 60, 53);
+    doc.text(String(r.nama).slice(0, 26), margin + 3, y + 5);
+    doc.text(`${r.kelas} (${r.tipe})`.slice(0, 24), margin + 55, y + 5);
+    doc.text(formatKg(r.kg), margin + 100, y + 5);
+    doc.text(formatRp(r.setorRp), margin + 122, y + 5);
+    doc.text(formatRp(r.tarikRp), margin + 152, y + 5);
+    y += 7;
+  });
+
+  if (nasabahRows.length) {
+    if (y > 276) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.setDrawColor(200, 210, 204);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y + 1, margin + 180, y + 1);
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(16, 36, 27);
+    doc.text(`Total (${nasabahRows.length} nasabah)`, margin + 3, y + 6);
+    doc.text(formatKg(nasabahTot.kg), margin + 100, y + 6);
+    doc.text(formatRp(nasabahTot.setorRp), margin + 122, y + 6);
+    doc.text(formatRp(nasabahTot.tarikRp), margin + 152, y + 6);
+    doc.setFont(undefined, "normal");
+    y += 10;
+  }
 
   doc.setTextColor(120, 130, 125);
   doc.setFontSize(7);
@@ -2767,7 +3127,7 @@ function renderNasabahRecapTable() {
   const recap = getNasabahRecap(cache.users, cache.flat);
 
   if (!recap.length) {
-    body.innerHTML = `<tr class="loading-row"><td colspan="6">Belum ada nasabah terdaftar.</td></tr>`;
+    body.innerHTML = `<tr class="loading-row"><td colspan="7">Belum ada nasabah terdaftar.</td></tr>`;
     return;
   }
 
@@ -2779,13 +3139,14 @@ function renderNasabahRecapTable() {
           <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
           <td>${formatKg(r.totalKg)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(r.totalSetorRp)}</td>
+          <td style="font-family:var(--font-mono)">${formatRp(r.totalTarikRp)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(r.saldo)}</td>
           <td>
             <button type="button" class="link-btn" data-recap-toggle-btn="${i}">Detail ▾</button>
           </td>
         </tr>
         <tr class="recap-detail-row hidden" id="recapDetail${i}">
-          <td colspan="6">
+          <td colspan="7">
             <p class="field-label" style="margin:0 0 8px">Rincian setoran per kategori</p>
             ${renderKategoriBreakdownCell(r.kategoriBreakdown)}
           </td>
@@ -2820,31 +3181,21 @@ function downloadNasabahRecapPdf() {
   const margin = 15;
   let y = 18;
 
-  doc.setTextColor(16, 36, 27);
-  doc.setFontSize(18);
-  doc.setFont(undefined, "bold");
-  doc.text("Resik For School", margin, y);
-  y += 8;
-  doc.setFontSize(13);
-  doc.text("Rekap Nasabah", margin, y);
-  y += 7;
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(100, 112, 106);
-  doc.text(`Dibuat: ${new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(new Date())}`, margin, y);
-  y += 10;
+  y = drawPdfHeader(doc, margin, "Rekap Nasabah");
 
   const totalKg = recap.reduce((sum, r) => sum + r.totalKg, 0);
   const totalSetorRp = recap.reduce((sum, r) => sum + r.totalSetorRp, 0);
+  const totalTarikRp = recap.reduce((sum, r) => sum + r.totalTarikRp, 0);
   const totalSaldo = recap.reduce((sum, r) => sum + r.saldo, 0);
 
   const cards = [
     ["Jumlah nasabah", String(recap.length)],
     ["Total sampah disetor", formatKg(totalKg)],
     ["Total nilai setoran", formatRp(totalSetorRp)],
+    ["Total penarikan", formatRp(totalTarikRp)],
     ["Total saldo aktif", formatRp(totalSaldo)],
   ];
-  const cardW = 43;
+  const cardW = (180 - 3 * (cards.length - 1)) / cards.length;
   cards.forEach(([label, value], i) => {
     const x = margin + i * (cardW + 3);
     doc.setFillColor(241, 245, 241);
@@ -2853,7 +3204,7 @@ function downloadNasabahRecapPdf() {
     doc.setFontSize(7.5);
     doc.text(label, x + 4, y + 7);
     doc.setTextColor(16, 36, 27);
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont(undefined, "bold");
     doc.text(value, x + 4, y + 15);
     doc.setFont(undefined, "normal");
@@ -2871,9 +3222,10 @@ function downloadNasabahRecapPdf() {
   doc.rect(margin, y, 180, 7, "F");
   doc.setFontSize(8);
   doc.text("Nama", margin + 3, y + 5);
-  doc.text("Kelas / Tipe", margin + 55, y + 5);
-  doc.text("Total Kg", margin + 100, y + 5);
-  doc.text("Total Setoran", margin + 128, y + 5);
+  doc.text("Kelas / Tipe", margin + 45, y + 5);
+  doc.text("Total Kg", margin + 82, y + 5);
+  doc.text("Total Setoran", margin + 102, y + 5);
+  doc.text("Total Penarikan", margin + 131, y + 5);
   doc.text("Saldo", margin + 160, y + 5);
   y += 7;
   doc.setFont(undefined, "normal");
@@ -2902,9 +3254,10 @@ function downloadNasabahRecapPdf() {
     doc.setFontSize(8);
     doc.setTextColor(45, 60, 53);
     doc.text(String(r.nama).slice(0, 24), margin + 3, y + 5);
-    doc.text(`${r.kelas} (${r.tipe})`.slice(0, 22), margin + 55, y + 5);
-    doc.text(formatKg(r.totalKg), margin + 100, y + 5);
-    doc.text(formatRp(r.totalSetorRp), margin + 128, y + 5);
+    doc.text(`${r.kelas} (${r.tipe})`.slice(0, 22), margin + 45, y + 5);
+    doc.text(formatKg(r.totalKg), margin + 82, y + 5);
+    doc.text(formatRp(r.totalSetorRp), margin + 102, y + 5);
+    doc.text(formatRp(r.totalTarikRp), margin + 131, y + 5);
     doc.text(formatRp(r.saldo), margin + 160, y + 5);
 
     doc.setFontSize(6.7);
@@ -2924,6 +3277,315 @@ function downloadNasabahRecapPdf() {
 }
 
 document.getElementById("btnDownloadRekapNasabah")?.addEventListener("click", downloadNasabahRecapPdf);
+
+// ============================================================================
+// Keuntungan — hasil jual sampah ke lapak dibanding modal beli dari nasabah
+// ============================================================================
+//
+// Pendapatan = berat × HARGA JUAL (snapshot saat dijual ke lapak)
+// Modal      = berat × rata-rata HARGA BELI dari nasabah (snapshot saat dijual)
+// Laba       = Pendapatan − Modal
+// % Untung   = Laba ÷ Modal × 100  (berapa persen untung dari modal)
+// Margin     = Laba ÷ Pendapatan × 100
+
+function wasteOutTotals(rows) {
+  const tot = rows.reduce(
+    (acc, tx) => {
+      const r = wasteOutSummary(tx);
+      acc.kg += r.kg;
+      acc.nilai += r.nilai;
+      acc.modal += r.modal;
+      if (r.adaEstimasi) acc.adaEstimasi = true;
+      return acc;
+    },
+    { kg: 0, nilai: 0, modal: 0, adaEstimasi: false },
+  );
+  const laba = tot.nilai - tot.modal;
+  return {
+    ...tot,
+    laba,
+    persen: tot.modal > 0 ? (laba / tot.modal) * 100 : null,
+    margin: tot.nilai > 0 ? (laba / tot.nilai) * 100 : null,
+  };
+}
+
+function getProfitData(flat, period) {
+  const rows = getWasteOutHistoryRows(flat).filter(
+    (tx) => period === "all" || (tx.tanggal && monthKey(tx.tanggal) === period),
+  );
+  const totals = wasteOutTotals(rows);
+
+  const perKategori = {};
+  rows.forEach((tx) => {
+    wasteOutItemDetails(tx).forEach((d) => {
+      const acc = (perKategori[d.kategori] ||= { kategori: d.kategori, kg: 0, nilai: 0, modal: 0 });
+      acc.kg += d.kg;
+      acc.nilai += d.nilai;
+      acc.modal += d.modal;
+    });
+  });
+  const kategoriRows = Object.values(perKategori)
+    .map((k) => ({
+      ...k,
+      laba: k.nilai - k.modal,
+      persen: k.modal > 0 ? ((k.nilai - k.modal) / k.modal) * 100 : null,
+      beliPerKg: k.kg > 0 ? k.modal / k.kg : 0,
+      jualPerKg: k.kg > 0 ? k.nilai / k.kg : 0,
+    }))
+    .sort((a, b) => b.laba - a.laba);
+
+  return { period, rows, totals, kategoriRows };
+}
+
+function profitPeriodLabel(period) {
+  return period === "all" ? "Semua Waktu" : monthLabel(period);
+}
+
+function currentProfitPeriod() {
+  return document.getElementById("profitPeriod")?.value || "all";
+}
+
+function renderKeuntungan() {
+  const select = document.getElementById("profitPeriod");
+  if (!select) return;
+
+  // Pilihan periode: semua waktu + setiap bulan yang punya penjualan + bulan ini.
+  const previous = select.value || "all";
+  const months = new Set([monthKey(new Date())]);
+  getWasteOutHistoryRows(cache.flat).forEach((tx) => {
+    if (tx.tanggal) months.add(monthKey(tx.tanggal));
+  });
+  const sorted = [...months].sort().reverse();
+  select.innerHTML =
+    `<option value="all">Semua waktu</option>` +
+    sorted.map((m) => `<option value="${m}">${escapeHtml(monthLabel(m))}</option>`).join("");
+  select.value = [...select.options].some((o) => o.value === previous) ? previous : "all";
+
+  const data = getProfitData(cache.flat, select.value);
+  const t = data.totals;
+
+  document.getElementById("profitStats").innerHTML = `
+    <div class="report-stat"><span>Pendapatan (jual ke lapak)</span><strong>${formatRp(t.nilai)}</strong></div>
+    <div class="report-stat"><span>Modal (beli dari nasabah)</span><strong>${formatRp(t.modal)}</strong></div>
+    <div class="report-stat report-stat--profit"><span>Keuntungan</span><strong class="${t.laba < 0 ? "profit-neg" : "profit-pos"}">${formatRp(t.laba)}</strong></div>
+    <div class="report-stat report-stat--profit"><span>Persentase untung</span><strong class="${t.laba < 0 ? "profit-neg" : "profit-pos"}">${formatPct(t.persen)}</strong><small>laba ÷ modal</small></div>
+    <div class="report-stat"><span>Margin penjualan</span><strong>${formatPct(t.margin)}</strong><small>laba ÷ pendapatan</small></div>
+    <div class="report-stat"><span>Sampah terjual</span><strong>${formatKg(t.kg)}</strong><small>${data.rows.length} penjualan</small></div>
+  `;
+
+  document.getElementById("profitKategoriBody").innerHTML =
+    data.kategoriRows
+      .map(
+        (k) => `<tr>
+          <td><strong>${escapeHtml(k.kategori)}</strong></td>
+          <td>${formatKg(k.kg)}</td>
+          <td>${formatRp(k.beliPerKg)}</td>
+          <td>${formatRp(k.jualPerKg)}</td>
+          <td>${formatRp(k.modal)}</td>
+          <td>${formatRp(k.nilai)}</td>
+          <td class="${k.laba < 0 ? "profit-neg" : "profit-pos"}">${formatRp(k.laba)}</td>
+          <td>${formatPct(k.persen)}</td>
+        </tr>`,
+      )
+      .join("") ||
+    `<tr class="loading-row"><td colspan="8">Belum ada penjualan pada periode ini.</td></tr>`;
+
+  document.getElementById("profitTxBody").innerHTML =
+    data.rows
+      .map((tx) => {
+        const sum = wasteOutSummary(tx);
+        const d = tx.tanggal ? new Date(tx.tanggal) : null;
+        const dateStr = d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : "-";
+        return `<tr>
+          <td>${dateStr}</td>
+          <td>${escapeHtml(tx.pengepul || tx.penerima || "-")}</td>
+          <td>${wasteOutRincianHtml(sum.details)}</td>
+          <td>${formatRp(sum.nilai)}</td>
+          <td>${formatRp(sum.modal)}</td>
+          <td class="${sum.laba < 0 ? "profit-neg" : "profit-pos"}">${formatRp(sum.laba)}</td>
+          <td>${formatPct(sum.persen)}</td>
+        </tr>`;
+      })
+      .join("") ||
+    `<tr class="loading-row"><td colspan="7">Belum ada penjualan pada periode ini.</td></tr>`;
+
+  const noteEl = document.getElementById("profitNote");
+  if (noteEl) {
+    noteEl.textContent = t.adaEstimasi
+      ? "* Ada penjualan lama yang harga jualnya tidak tercatat saat itu, jadi dihitung memakai harga jual kategori saat ini. Penjualan baru selalu menyimpan harga saat transaksi."
+      : "";
+  }
+}
+
+document.getElementById("profitPeriod")?.addEventListener("change", renderKeuntungan);
+
+function downloadProfitPdf() {
+  if (!window.jspdf?.jsPDF) {
+    alert("Library PDF belum siap. Pastikan internet aktif lalu coba lagi.");
+    return;
+  }
+
+  const period = currentProfitPeriod();
+  const data = getProfitData(cache.flat, period);
+  const t = data.totals;
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const margin = 15;
+  let y = 18;
+
+  y = drawPdfHeader(doc, margin, `Laporan Keuntungan — ${profitPeriodLabel(period)}`);
+
+  const cards = [
+    ["Pendapatan", formatRp(t.nilai)],
+    ["Modal", formatRp(t.modal)],
+    ["Keuntungan", formatRp(t.laba)],
+    ["Persentase untung", formatPct(t.persen)],
+  ];
+  const cardW = 43;
+  cards.forEach(([label, value], i) => {
+    const x = margin + i * (cardW + 3);
+    doc.setFillColor(241, 245, 241);
+    doc.roundedRect(x, y, cardW, 20, 2.5, 2.5, "F");
+    doc.setTextColor(100, 112, 106);
+    doc.setFontSize(7.5);
+    doc.text(label, x + 4, y + 7);
+    doc.setTextColor(16, 36, 27);
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold");
+    doc.text(String(value).slice(0, 20), x + 4, y + 15);
+    doc.setFont(undefined, "normal");
+  });
+  y += 26;
+
+  doc.setFontSize(8);
+  doc.setTextColor(100, 112, 106);
+  doc.text(
+    `Sampah terjual ${formatKg(t.kg)} dalam ${data.rows.length} penjualan. Margin penjualan ${formatPct(t.margin)}. Persentase untung = laba ÷ modal.`,
+    margin,
+    y,
+  );
+  y += 8;
+
+  // --- Per kategori
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Keuntungan per Kategori", margin, y);
+  y += 5;
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Kategori", margin + 3, y + 5);
+  doc.text("Terjual", margin + 42, y + 5);
+  doc.text("Harga Beli/kg", margin + 66, y + 5);
+  doc.text("Harga Jual/kg", margin + 96, y + 5);
+  doc.text("Laba", margin + 128, y + 5);
+  doc.text("% Untung", margin + 160, y + 5);
+  y += 7;
+  doc.setFont(undefined, "normal");
+  doc.setTextColor(45, 60, 53);
+
+  if (!data.kategoriRows.length) {
+    doc.setFontSize(8.5);
+    doc.text("Belum ada penjualan pada periode ini.", margin + 3, y + 5);
+    y += 10;
+  }
+  data.kategoriRows.forEach((k, i) => {
+    if (y > 275) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, 7, "F");
+    }
+    doc.setFontSize(8);
+    doc.text(String(k.kategori).slice(0, 20), margin + 3, y + 5);
+    doc.text(formatKg(k.kg), margin + 42, y + 5);
+    doc.text(formatRp(k.beliPerKg), margin + 66, y + 5);
+    doc.text(formatRp(k.jualPerKg), margin + 96, y + 5);
+    doc.text(formatRp(k.laba), margin + 128, y + 5);
+    doc.text(formatPct(k.persen), margin + 160, y + 5);
+    y += 7;
+  });
+
+  // --- Per penjualan (dengan harga jual saat itu)
+  y += 8;
+  if (y > 250) {
+    doc.addPage();
+    y = 18;
+  }
+  doc.setFontSize(11);
+  doc.setFont(undefined, "bold");
+  doc.setTextColor(16, 36, 27);
+  doc.text("Rincian Penjualan ke Lapak", margin, y);
+  y += 5;
+  doc.setFillColor(30, 122, 76);
+  doc.setTextColor(255, 255, 255);
+  doc.rect(margin, y, 180, 7, "F");
+  doc.setFontSize(8);
+  doc.text("Tanggal", margin + 3, y + 5);
+  doc.text("Pengepul", margin + 24, y + 5);
+  doc.text("Penjualan", margin + 72, y + 5);
+  doc.text("Modal", margin + 104, y + 5);
+  doc.text("Laba", margin + 134, y + 5);
+  doc.text("%", margin + 168, y + 5);
+  y += 7;
+  doc.setFont(undefined, "normal");
+
+  data.rows.forEach((tx, i) => {
+    const sum = wasteOutSummary(tx);
+    const d = tx.tanggal ? new Date(tx.tanggal) : null;
+    const dateStr = d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : "-";
+    const breakdown = sum.details
+      .map((x) => `${x.kategori} ${formatKg(x.kg)} × ${formatRp(x.hargaJual)}/kg${x.estimasi ? " *" : ""}`)
+      .join("   •   ");
+    const wrapped = doc.splitTextToSize(`Harga jual: ${breakdown || "-"}`, 174);
+    const rowHeight = 7 + wrapped.length * 4;
+
+    if (y + rowHeight > 280) {
+      doc.addPage();
+      y = 18;
+    }
+    if (i % 2 === 0) {
+      doc.setFillColor(247, 249, 247);
+      doc.rect(margin, y, 180, rowHeight, "F");
+    }
+    doc.setFontSize(8);
+    doc.setTextColor(45, 60, 53);
+    doc.text(dateStr, margin + 3, y + 5);
+    doc.text(String(tx.pengepul || tx.penerima || "-").slice(0, 24), margin + 24, y + 5);
+    doc.text(formatRp(sum.nilai), margin + 72, y + 5);
+    doc.text(formatRp(sum.modal), margin + 104, y + 5);
+    doc.text(formatRp(sum.laba), margin + 134, y + 5);
+    doc.text(formatPct(sum.persen), margin + 168, y + 5);
+
+    doc.setFontSize(6.7);
+    doc.setTextColor(100, 112, 106);
+    wrapped.forEach((line, li) => {
+      doc.text(line, margin + 3, y + 5 + 4.2 * (li + 1));
+    });
+    y += rowHeight;
+  });
+
+  if (t.adaEstimasi) {
+    if (y > 278) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.setFontSize(7);
+    doc.setTextColor(120, 130, 125);
+    doc.text("* Harga jual saat transaksi tidak tercatat; memakai harga jual kategori saat dokumen dibuat.", margin, y + 6);
+  }
+
+  doc.setTextColor(120, 130, 125);
+  doc.setFontSize(7);
+  doc.text("Laporan dibuat otomatis dari data penjualan sampah yang tersimpan di Firebase.", margin, 287);
+  doc.save(`keuntungan-${period}.pdf`);
+}
+
+document.getElementById("btnDownloadProfit")?.addEventListener("click", downloadProfitPdf);
 
 // ============================================================================
 // View navigation
@@ -2979,6 +3641,10 @@ async function showView(name) {
       cache.users,
       cache.flat,
     );
+  }
+
+  if (name === "keuntungan") {
+    renderKeuntungan();
   }
 
   if (name === "raport") {
@@ -3078,12 +3744,19 @@ const wasteOutReceiverEl = document.getElementById("wasteOutReceiver");
 const wasteOutNoteEl = document.getElementById("wasteOutNote");
 const wasteOutTotalEl = document.getElementById("wasteOutTotal");
 
-function wasteOutRowHtml(selected = "", berat = "") {
+// Harga jual per kg default-nya diambil dari harga jual kategori, tapi bisa
+// diubah per baris — harga lapak di hari penjualan sering beda dari harga
+// standar. Nilai yang tertulis di baris inilah yang disimpan sebagai
+// snapshot di riwayat.
+function wasteOutRowHtml(selected = "", berat = "", harga = "") {
+  const pilih = selected || cache.kategori[0]?.nama || "";
+  const hargaJual = harga !== "" ? harga : hargaJualKategoriOf(pilih) || "";
   return `<div class="multi-item-row waste-out-row">
     <select class="select-input waste-out-kategori">
-      ${cache.kategori.map((k) => `<option value="${escapeHtml(k.nama)}" ${k.nama === selected ? "selected" : ""}>${escapeHtml(k.nama)} — ${formatRp(k.harga)}/kg</option>`).join("")}
+      ${cache.kategori.map((k) => `<option value="${escapeHtml(k.nama)}" ${k.nama === pilih ? "selected" : ""}>${escapeHtml(k.nama)} — jual ${formatRp(hargaJualKategoriOf(k.nama))}/kg</option>`).join("")}
     </select>
     <input type="number" min="0.01" step="0.01" class="text-input waste-out-berat" value="${berat}" placeholder="Kg" />
+    <input type="number" min="0" step="1" class="text-input waste-out-harga" value="${hargaJual}" placeholder="Harga jual/kg" title="Harga jual per kg ke lapak pada transaksi ini" />
     <button type="button" class="link-btn is-danger waste-out-remove">Hapus</button>
   </div>`;
 }
@@ -3097,17 +3770,55 @@ function getCurrentWasteOutItems() {
     .map((row) => ({
       kategori: row.querySelector(".waste-out-kategori")?.value || "",
       berat_kg: parseFloat(row.querySelector(".waste-out-berat")?.value) || 0,
+      harga_jual_per_kg: parseFloat(row.querySelector(".waste-out-harga")?.value) || 0,
     }))
     .filter((item) => item.kategori && item.berat_kg > 0);
 }
 
 function kalkulasiWasteOut() {
-  const total = getCurrentWasteOutItems().reduce(
-    (sum, item) => sum + item.berat_kg,
+  const items = getCurrentWasteOutItems();
+  const total = items.reduce((sum, item) => sum + item.berat_kg, 0);
+  if (wasteOutTotalEl) wasteOutTotalEl.textContent = formatKg(total);
+
+  // Pratinjau pendapatan & laba sebelum disimpan.
+  const tanggal = wasteOutDateEl?.value
+    ? `${wasteOutDateEl.value}T23:59:59`
+    : new Date().toISOString();
+  const pendapatan = items.reduce(
+    (sum, item) => sum + item.berat_kg * item.harga_jual_per_kg,
     0,
   );
-  if (wasteOutTotalEl) wasteOutTotalEl.textContent = formatKg(total);
+  const modal = items.reduce(
+    (sum, item) => sum + item.berat_kg * avgModalPerKg(item.kategori, tanggal),
+    0,
+  );
+  const laba = pendapatan - modal;
+  const revEl = document.getElementById("wasteOutRevenue");
+  const profitEl = document.getElementById("wasteOutProfit");
+  if (revEl) revEl.textContent = formatRp(pendapatan);
+  if (profitEl) {
+    profitEl.textContent = `${formatRp(laba)} (${formatPct(modal > 0 ? (laba / modal) * 100 : null)})`;
+  }
   return total;
+}
+
+// Stok tersedia per kategori (sepanjang waktu) = total setoran - total yang
+// sudah dikeluarkan. Dipakai untuk mencegah pengeluaran melebihi stok.
+function stokTersediaKg(kategori, flat = cache.flat || []) {
+  let masuk = 0;
+  let keluar = 0;
+  flat.forEach((t) => {
+    if (t.tipe === "Setor") {
+      getSetorItems(t).forEach((item) => {
+        if ((item.kategori || "Lainnya") === kategori) masuk += Number(item.berat_kg) || 0;
+      });
+    } else if (t.isWasteOut || t.tipe === "Pengeluaran Sampah") {
+      getWasteOutItems(t).forEach((item) => {
+        if ((item.kategori || "Lainnya") === kategori) keluar += Number(item.berat_kg) || 0;
+      });
+    }
+  });
+  return Math.round((masuk - keluar) * 100) / 100;
 }
 
 function initWasteOutForm() {
@@ -3119,7 +3830,16 @@ function initWasteOutForm() {
   kalkulasiWasteOut();
 
   wasteOutItemsEl.addEventListener("input", kalkulasiWasteOut);
-  wasteOutItemsEl.addEventListener("change", kalkulasiWasteOut);
+  wasteOutItemsEl.addEventListener("change", (event) => {
+    // Ganti kategori -> isi ulang harga jual dengan harga jual kategori itu.
+    const select = event.target.closest(".waste-out-kategori");
+    if (select) {
+      const hargaInput = select.closest(".waste-out-row")?.querySelector(".waste-out-harga");
+      if (hargaInput) hargaInput.value = hargaJualKategoriOf(select.value) || "";
+    }
+    kalkulasiWasteOut();
+  });
+  wasteOutDateEl?.addEventListener("change", kalkulasiWasteOut);
   wasteOutItemsEl.addEventListener("click", (event) => {
     const removeBtn = event.target.closest(".waste-out-remove");
     if (!removeBtn) return;
@@ -3157,6 +3877,29 @@ function initWasteOutForm() {
       alert("Pengepul / penerima wajib diisi.");
       return;
     }
+    if (items.some((item) => !(item.harga_jual_per_kg > 0))) {
+      alert("Isi harga jual per kg untuk setiap kategori yang dikeluarkan.");
+      return;
+    }
+
+    // Validasi stok: total yang dikeluarkan per kategori (baris kategori yang
+    // sama dijumlahkan) tidak boleh melebihi stok yang tersedia.
+    const diminta = {};
+    items.forEach((item) => {
+      diminta[item.kategori] = (diminta[item.kategori] || 0) + item.berat_kg;
+    });
+    const kurang = Object.entries(diminta)
+      .map(([kategori, kg]) => ({ kategori, kg, stok: Math.max(0, stokTersediaKg(kategori)) }))
+      .filter((r) => Math.round(r.kg * 100) / 100 > r.stok);
+    if (kurang.length) {
+      alert(
+        "Stok tidak mencukupi:\n" +
+          kurang
+            .map((r) => `• ${r.kategori}: diminta ${formatKg(r.kg)}, stok tersedia ${formatKg(r.stok)}`)
+            .join("\n"),
+      );
+      return;
+    }
 
     const btn = document.getElementById("btnSimpanWasteOut");
     if (btn) btn.disabled = true;
@@ -3165,14 +3908,38 @@ function initWasteOutForm() {
       const key = push(ref(db, "waste_out")).key;
       if (!key) throw new Error("Gagal membuat key pengeluaran sampah.");
 
+      // Snapshot harga SAAT penjualan: harga jual per kg yang dipakai dan
+      // modal per kg (rata-rata harga beli dari nasabah). Disimpan di data
+      // supaya riwayat & laporan keuntungan tidak berubah saat harga
+      // kategori diubah di kemudian hari.
+      const akhirHari = `${tanggalInput}T23:59:59`;
+      const itemsSnapshot = items.map((item) => {
+        const modalPerKg = Math.round(avgModalPerKg(item.kategori, akhirHari) * 100) / 100;
+        return {
+          kategori: item.kategori,
+          berat_kg: item.berat_kg,
+          harga_jual_per_kg: item.harga_jual_per_kg,
+          modal_per_kg: modalPerKg,
+          pendapatan_rp: Math.round(item.berat_kg * item.harga_jual_per_kg),
+          modal_rp: Math.round(item.berat_kg * modalPerKg),
+        };
+      });
+      const pendapatanRp = itemsSnapshot.reduce((sum, i) => sum + i.pendapatan_rp, 0);
+      const modalRp = itemsSnapshot.reduce((sum, i) => sum + i.modal_rp, 0);
+
+      // total_rp sengaja tetap 0: field ini dibaca perhitungan saldo/arus
+      // kas nasabah, dan uang hasil jual ke lapak bukan saldo nasabah.
       const txn = {
         tipe: "Pengeluaran Sampah",
         tanggal: new Date(`${tanggalInput}T12:00:00`).toISOString(),
         pengepul: receiver,
         catatan: note,
-        items,
+        items: itemsSnapshot,
         berat_kg: totalKg,
         total_rp: 0,
+        pendapatan_rp: pendapatanRp,
+        modal_rp: modalRp,
+        laba_rp: pendapatanRp - modalRp,
         admin_pencatat: "Admin Sekolah",
       };
 
