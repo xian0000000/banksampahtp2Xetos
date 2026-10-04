@@ -2673,3 +2673,94 @@ body{background:var(--ui-bg)!important;color:var(--ui-ink)!important;font-family
 .btn-logout svg { width: 16px; height: 16px; }
 .btn-logout:hover { background: #fdeaea; border-color: #e8a9a9; }
 .btn-logout:disabled { opacity: .6; cursor: default; }
+
+
+/* Kartu ringkasan 4 kolom (menu Keuangan) + keterangan kecil di kartu */
+.summary-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .summary-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .summary-grid--4 { grid-template-columns: 1fr; } }
+.stat-sub {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-muted);
+}
+
+/* Pagination tabel/daftar panjang: 10 baris per halaman */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 12px 2px 2px;
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border-soft);
+}
+.pager[hidden] { display: none; }
+.pager-info { font-size: 12px; color: var(--color-muted); }
+.pager-controls { display: flex; align-items: center; gap: 8px; }
+.pager-page {
+  min-width: 96px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-ink-soft);
+}
+.pager-btn {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.pager-btn:hover:not(:disabled) { background: var(--color-primary-soft); border-color: var(--color-primary); color: var(--color-primary-dark); }
+.pager-btn:disabled { opacity: .45; cursor: default; }
+@media (max-width: 560px) {
+  .pager { justify-content: center; text-align: center; }
+  .pager-controls { width: 100%; justify-content: space-between; }
+  .pager-page { min-width: 0; }
+}
+
+
+/* Sidebar desktop: tinggi tetap = tinggi layar dan nempel (sticky), jadi tombol
+   Logout selalu di dasar layar & tidak bergeser walau halamannya panjang/pendek
+   atau kartu "Selamat datang" disembunyikan (mis. di Dashboard). */
+@media (min-width: 761px) {
+  .app-shell > .sidebar {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+/* Menu mengisi ruang kosong → footer & logout selalu terdorong ke dasar sidebar */
+.sidebar .nav-group { flex: 1 1 auto; align-content: flex-start; }
+.sidebar .sidebar-logout { margin-top: 0 !important; flex-shrink: 0; }
+.sidebar .sidebar-footer { margin-top: 0 !important; flex-shrink: 0; }
+.sidebar .sidebar-footer { padding-bottom: 0 !important; }
+.sidebar .sidebar-logout { padding-top: 10px; }
+
+
+/* Pilihan jenis transaksi (Setor / Tarik) — satu toggle di panel Detail Transaksi */
+.jenis-block { margin-bottom: 16px; }
+.jenis-block .scan-toggle { margin: 4px 0 8px; }
+.jenis-block .scan-toggle-btn { padding: 12px 10px; font-size: 13px; }
+.jenis-hint {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.jenis-block select[hidden] { display: none !important; }

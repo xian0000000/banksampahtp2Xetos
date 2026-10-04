@@ -41,7 +41,7 @@ const auth = getAuth(app);
 
 // Data grafik dashboard disimpan supaya tab Harian / 7 Hari / 30 Hari
 // bisa berganti tanpa request Firebase ulang.
-let dashboardChartState = { days: [], masuk: [], tarik: [], range: 1 };
+let dashboardChartState = { days: [], masuk: [], tarik: [], range: 30 };
 
 // ============================================================================
 // Auth — login admin pakai Google Sign-In, dibatasi ke email yang terdaftar
@@ -208,12 +208,25 @@ function hargaKategoriOf(nama) {
   return cache.kategori.find((k) => k.nama === nama)?.harga || 0;
 }
 
+// true kalau v angka yang sah, TERMASUK 0. Harga 0 itu valid (mis. sampah
+// gratis) dan harus dibedakan dari data yang memang kosong/belum ada.
+function hasNumber(v) {
+  return v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v));
+}
+
+// Harga per kg yang tersimpan di item transaksi (snapshot saat dicatat).
+// Hanya kalau snapshot-nya tidak ada (data lama) baru pakai harga kategori
+// sekarang, supaya riwayat berharga 0 tidak berubah ikut harga terbaru.
+function hargaItemOf(item, kategori = item?.kategori) {
+  return hasNumber(item?.harga_per_kg) ? Number(item.harga_per_kg) : hargaKategoriOf(kategori);
+}
+
 // Harga jual ke lapak. Kategori lama yang belum punya harga_jual dianggap
 // sama dengan harga beli (laba 0) sampai admin mengisinya di menu Kategori.
 function hargaJualKategoriOf(nama) {
   const k = cache.kategori.find((kat) => kat.nama === nama);
   if (!k) return 0;
-  return Number(k.harga_jual) > 0 ? Number(k.harga_jual) : Number(k.harga) || 0;
+  return hasNumber(k.harga_jual) ? Number(k.harga_jual) : Number(k.harga) || 0;
 }
 
 // Modal per kg = rata-rata tertimbang harga beli semua setoran kategori itu
@@ -228,7 +241,7 @@ function avgModalPerKg(kategori, tanggalIso, flat = cache.flat) {
     getSetorItems(t).forEach((item) => {
       if (item.kategori !== kategori) return;
       const kg = Number(item.berat_kg) || 0;
-      const harga = Number(item.harga_per_kg) || hargaKategoriOf(item.kategori);
+      const harga = hargaItemOf(item);
       kgTotal += kg;
       rpTotal += kg * harga;
     });
@@ -398,6 +411,81 @@ function last30Days() {
 
 
 // ============================================================================
+// Pagination — maksimal 10 baris per halaman, tombol Sebelumnya / Berikutnya
+// ============================================================================
+
+const PAGE_SIZE = 10;
+const pagerState = {};
+
+function ensurePager(id, el) {
+  let pager = document.getElementById(`pager-${id}`);
+  if (pager) return pager;
+  pager = document.createElement("nav");
+  pager.id = `pager-${id}`;
+  pager.className = "pager";
+  pager.setAttribute("aria-label", "Navigasi halaman");
+  pager.hidden = true;
+  (el.closest(".table-scroll") || el).insertAdjacentElement("afterend", pager);
+  return pager;
+}
+
+// Render `rows` ke elemen #id (tbody atau div) per halaman.
+//   rowHtml(row, indexGlobal) -> string HTML satu baris
+//   footer   -> HTML tambahan di bawah baris (mis. baris total), tampil di tiap halaman
+//   empty    -> HTML bila rows kosong
+//   resetKey -> kalau berubah (mis. ganti periode/nasabah), balik ke halaman 1
+function renderPaged(opts) {
+  const { id, rows, rowHtml, empty = "", footer = "", resetKey = "" } = opts;
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  const st = (pagerState[id] ||= { page: 1, resetKey });
+  if (st.resetKey !== resetKey) {
+    st.page = 1;
+    st.resetKey = resetKey;
+  }
+  st.opts = opts;
+
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  st.page = Math.min(Math.max(1, st.page), totalPages);
+
+  const start = (st.page - 1) * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+  el.innerHTML = total
+    ? pageRows.map((r, i) => rowHtml(r, start + i)).join("") + footer
+    : empty;
+
+  const pager = ensurePager(id, el);
+  if (total <= PAGE_SIZE) {
+    pager.hidden = true;
+    pager.innerHTML = "";
+    return;
+  }
+
+  const end = Math.min(start + PAGE_SIZE, total);
+  pager.hidden = false;
+  pager.innerHTML = `
+    <span class="pager-info">Menampilkan ${start + 1}–${end} dari ${total}</span>
+    <div class="pager-controls">
+      <button type="button" class="pager-btn" data-pager-id="${id}" data-pager-go="prev" ${st.page <= 1 ? "disabled" : ""}>‹ Sebelumnya</button>
+      <span class="pager-page">Halaman ${st.page} / ${totalPages}</span>
+      <button type="button" class="pager-btn" data-pager-id="${id}" data-pager-go="next" ${st.page >= totalPages ? "disabled" : ""}>Berikutnya ›</button>
+    </div>
+  `;
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-pager-go]");
+  if (!btn || btn.disabled) return;
+  const st = pagerState[btn.dataset.pagerId];
+  if (!st?.opts) return;
+  st.page += btn.dataset.pagerGo === "next" ? 1 : -1;
+  renderPaged(st.opts);
+});
+
+
+// ============================================================================
 // Data layer
 // ============================================================================
 
@@ -429,6 +517,17 @@ async function fetchAllWasteOut() {
     // Node waste_out bisa belum punya permission di Firebase Rules.
     // Jangan biarkan kegagalan node opsional ini membuat seluruh dashboard kosong.
     console.warn("Pengeluaran sampah belum bisa dibaca:", err);
+    return {};
+  }
+}
+
+async function fetchBankWithdrawals() {
+  try {
+    const snap = await get(child(ref(db), "bank_withdrawals"));
+    return snap.exists() ? snap.val() : {};
+  } catch (err) {
+    // Node bank_withdrawals bisa belum punya permission di Firebase Rules.
+    console.warn("Penarikan dana bank sampah belum bisa dibaca:", err);
     return {};
   }
 }
@@ -531,7 +630,7 @@ function getSetorItems(tx) {
     return [{
       kategori: tx.kategori,
       berat_kg: Number(tx.berat_kg) || 0,
-      harga_per_kg: Number(tx.harga_per_kg) || hargaKategoriOf(tx.kategori),
+      harga_per_kg: hargaItemOf(tx, tx.kategori),
       total_rp: Number(tx.total_rp) || 0,
     }];
   }
@@ -543,7 +642,7 @@ function totalBeratTx(tx) {
 }
 
 function totalNilaiItems(items) {
-  return items.reduce((sum, item) => sum + ((Number(item.berat_kg) || 0) * (Number(item.harga_per_kg) || hargaKategoriOf(item.kategori))), 0);
+  return items.reduce((sum, item) => sum + ((Number(item.berat_kg) || 0) * hargaItemOf(item)), 0);
 }
 
 function getWasteOutItems(tx) {
@@ -779,7 +878,7 @@ function renderAccumulationChart(days, masukRp, tarikRp) {
 }
 
 function setDashboardRange(range) {
-  const n = Number(range) || 1;
+  const n = Number(range) || 30;
   dashboardChartState.range = n;
   const take = Math.min(n, dashboardChartState.days.length || n);
   const days = dashboardChartState.days.slice(-take);
@@ -903,6 +1002,7 @@ let cache = {
   flat: [],
   kategori: [],
   pengumuman: [],
+  bankWithdrawals: {},
 };
 
 async function fetchPengumuman() {
@@ -929,12 +1029,14 @@ async function loadDashboard() {
     kategori,
     wasteOut,
     pengumuman,
+    bankWithdrawals,
   ] = await Promise.all([
     fetchAllUsers(),
     fetchAllTransactions(),
     fetchKategori(),
     fetchAllWasteOut(),
     fetchPengumuman(),
+    fetchBankWithdrawals(),
   ]);
 
   const flat = flattenTransactions(
@@ -950,6 +1052,7 @@ async function loadDashboard() {
     flat,
     kategori,
     pengumuman,
+    bankWithdrawals,
   };
 
   populateKategoriSelect();
@@ -1066,9 +1169,9 @@ async function loadDashboard() {
     masuk: masukRp30,
     tarik: tarikRp30,
     flat,
-    range: 1,
+    range: 30,
   };
-  setDashboardRange(1);
+  setDashboardRange(30);
 
   // Balance
 
@@ -1144,9 +1247,12 @@ async function loadDashboard() {
 // Nasabah
 // ============================================================================
 
+let selectedNasabahUid = null;
+
 function showNasabahPreview(uid) {
   const user = cache.users?.[uid];
   if (!user) return;
+  selectedNasabahUid = uid;
 
   document.querySelectorAll("#tableNasabah tr[data-user-uid]").forEach((row) => {
     row.classList.toggle("is-selected", row.dataset.userUid === uid);
@@ -1190,17 +1296,34 @@ function showNasabahPreview(uid) {
 }
 
 function renderNasabahTable(users) {
-  const rows = Object.entries(users);
-  const countEl = document.getElementById("nasabahTableCount");
-  if (countEl) countEl.textContent = `${rows.length} nasabah`;
+  const all = Object.entries(users || {});
 
-  document.getElementById(
-    "tableNasabah",
-  ).innerHTML =
-    rows
-      .map(
-        ([uid, u]) => `
-          <tr class="nasabah-row" data-user-uid="${uid}" tabindex="0" role="button" aria-label="Pilih nasabah ${escapeHtml(u.nama || "Nasabah")}">
+  // Pencarian menyaring SELURUH data (bukan cuma baris di halaman aktif),
+  // baru hasilnya dipaginasi. Cocok ke nama, tipe, kelas, email, dan UID.
+  const q = (document.getElementById("nasabahSearch")?.value || "")
+    .trim()
+    .toLowerCase();
+  const rows = q
+    ? all.filter(([uid, u]) =>
+        [u.nama, u.tipe, u.kelas, u.email, uid]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q)),
+      )
+    : all;
+
+  const countEl = document.getElementById("nasabahTableCount");
+  if (countEl) {
+    countEl.textContent = q
+      ? `${rows.length} dari ${all.length} nasabah`
+      : `${all.length} nasabah`;
+  }
+
+  renderPaged({
+    id: "tableNasabah",
+    rows,
+    resetKey: q,
+    rowHtml: ([uid, u]) => `
+          <tr class="nasabah-row${uid === selectedNasabahUid ? " is-selected" : ""}" data-user-uid="${uid}" tabindex="0" role="button" aria-label="Pilih nasabah ${escapeHtml(u.nama || "Nasabah")}">
             <td>${u.nama || "-"}</td>
 
             <td>${u.tipe || "Siswa"}</td>
@@ -1244,15 +1367,14 @@ function renderNasabahTable(users) {
             </td>
           </tr>
         `,
-      )
-      .join("") ||
-    `
+    empty: `
       <tr class="loading-row">
         <td colspan="8">
-          Belum ada nasabah terdaftar.
+          ${q ? "Tidak ada nasabah yang cocok dengan pencarian." : "Belum ada nasabah terdaftar."}
         </td>
       </tr>
-    `;
+    `,
+  });
 }
 
 document.getElementById("tableNasabah")?.addEventListener("click", (e) => {
@@ -1721,11 +1843,11 @@ function renderKategoriTable(flat) {
               <input type="text" class="kategori-nama-input text-input" data-key="${k.key}" value="${k.nama}" />
             </td>
             <td>
-              <input type="number" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
+              <input type="number" min="0" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
             </td>
             <td>
               <div class="price-edit-row">
-                <input type="number" class="kategori-harga-jual-input" data-key="${k.key}" value="${hargaJualKategoriOf(k.nama)}" />
+                <input type="number" min="0" class="kategori-harga-jual-input" data-key="${k.key}" value="${hargaJualKategoriOf(k.nama)}" />
                 <button class="link-btn" data-save-kategori="${k.key}">Simpan</button>
               </div>
             </td>
@@ -1848,12 +1970,12 @@ document
       if (
         !nama ||
         !Number.isFinite(harga) ||
-        harga <= 0 ||
+        harga < 0 ||
         !Number.isFinite(hargaJual) ||
-        hargaJual <= 0
+        hargaJual < 0
       ) {
         errorEl.textContent =
-          "Isi nama kategori, harga beli, dan harga jual per kg yang valid.";
+          "Isi nama kategori, harga beli, dan harga jual per kg. Boleh 0, tapi tidak boleh kosong atau minus.";
 
         errorEl.classList.add(
           "field-error",
@@ -1946,8 +2068,12 @@ document
     const harga = parseFloat(hargaInput?.value);
     const hargaJualInput = document.querySelector(`.kategori-harga-jual-input[data-key="${key}"]`);
     const hargaJual = parseFloat(hargaJualInput?.value);
-    if (!nama || !Number.isFinite(harga) || harga <= 0 || !Number.isFinite(hargaJual) || hargaJual <= 0) {
-      alert("Nama, harga beli, dan harga jual kategori harus valid.");
+    if (!nama) {
+      alert("Nama kategori tidak boleh kosong.");
+      return;
+    }
+    if (!Number.isFinite(harga) || harga < 0 || !Number.isFinite(hargaJual) || hargaJual < 0) {
+      alert("Harga beli dan harga jual harus diisi. Boleh 0, tapi tidak boleh kosong atau minus.");
       return;
     }
     const duplicate = cache.kategori.some((k) => k.key !== key && k.nama.toLowerCase() === nama.toLowerCase());
@@ -2055,7 +2181,7 @@ function renderStokTable(flat) {
 function wasteOutItemDetails(tx) {
   return getWasteOutItems(tx).map((item) => {
     const kg = Number(item.berat_kg) || 0;
-    const tercatat = Number(item.harga_jual_per_kg) > 0;
+    const tercatat = hasNumber(item.harga_jual_per_kg);
     const hargaJual = tercatat
       ? Number(item.harga_jual_per_kg)
       : hargaJualKategoriOf(item.kategori);
@@ -2174,13 +2300,16 @@ function getWasteOutHistoryRows(flat) {
 function renderWasteOutHistory(flat) {
   const rows = getWasteOutHistoryRows(flat);
 
-  document.getElementById("tableWasteOutHistory").innerHTML =
-    rows.map(wasteOutHistoryRowHtml).join("") ||
-    `
+  renderPaged({
+    id: "tableWasteOutHistory",
+    rows,
+    rowHtml: wasteOutHistoryRowHtml,
+    empty: `
       <tr class="loading-row">
         <td colspan="8">Belum ada pengeluaran sampah tercatat.</td>
       </tr>
-    `;
+    `,
+  });
 
   const summaryEl = document.getElementById("wasteOutHistorySummary");
   if (summaryEl) {
@@ -2337,6 +2466,48 @@ function downloadWasteOutTransactionPdf(tx) {
 // Keuangan
 // ============================================================================
 
+// Daftar penarikan dana bank sampah (diambil dari keuntungan jual sampah),
+// terbaru di atas. Disimpan terpisah di node `bank_withdrawals` supaya tidak
+// bercampur dengan saldo/penarikan nasabah.
+function bankWithdrawalList() {
+  return Object.entries(cache.bankWithdrawals || {})
+    .map(([key, w]) => ({ key, ...w }))
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+}
+
+// Saldo keuntungan bank sampah = total laba penjualan ke lapak (semua waktu)
+// dikurangi total dana yang sudah ditarik bank sampah.
+function bankProfitSummary(flat = cache.flat) {
+  const totalLaba = Math.round(
+    getWasteOutHistoryRows(flat || []).reduce(
+      (sum, tx) => sum + wasteOutSummary(tx).laba,
+      0,
+    ),
+  );
+  const totalTarik = bankWithdrawalList().reduce(
+    (sum, w) => sum + (Number(w.nominal_rp) || 0),
+    0,
+  );
+  return { totalLaba, totalTarik, saldo: totalLaba - totalTarik };
+}
+
+function bankWithdrawalRowHtml(w) {
+  const d = w.tanggal ? new Date(w.tanggal) : null;
+  const dateStr = d
+    ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
+    : "-";
+  return `
+    <tr>
+      <td>${dateStr}</td>
+      <td class="tx-amount is-out" style="font-family:var(--font-mono)">- ${formatRp(Number(w.nominal_rp) || 0)}</td>
+      <td>${escapeHtml(w.catatan || "-")}</td>
+      <td class="table-actions">
+        <button class="link-btn is-danger" data-delete-bank-tarik="${w.key}">Hapus</button>
+      </td>
+    </tr>
+  `;
+}
+
 function renderKeuangan(
   users,
   flat,
@@ -2373,38 +2544,156 @@ function renderKeuangan(
         0,
       );
 
-  const saldoAktif =
-    Object.values(users).reduce(
-      (s, u) =>
-        s +
-        (u.saldo_terakhir || 0),
-      0,
-    );
+  // Saldo nasabah aktif: uang milik nasabah yang masih tersimpan di bank sampah.
+  const nasabahList = Object.values(users);
+  const saldoAktif = nasabahList.reduce(
+    (s, u) => s + (u.saldo_terakhir || 0),
+    0,
+  );
+  const nasabahBersaldo = nasabahList.filter(
+    (u) => (u.saldo_terakhir || 0) > 0,
+  ).length;
 
-  document.getElementById(
-    "keuanganSaldoAktif",
-  ).textContent =
-    formatRp(saldoAktif);
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
 
-  document.getElementById(
-    "keuanganMasuk",
-  ).textContent =
-    formatRp(masuk);
+  setText("keuanganSaldoAktif", formatRp(saldoAktif));
+  setText(
+    "keuanganSaldoAktifNote",
+    `Milik ${nasabahBersaldo} dari ${nasabahList.length} nasabah`,
+  );
+  setText("keuanganMasuk", formatRp(masuk));
+  setText("keuanganKeluar", formatRp(keluar));
 
-  document.getElementById(
-    "keuanganKeluar",
-  ).textContent =
-    formatRp(keluar);
+  // Saldo keuntungan bank sampah + form tarik dana.
+  const bank = bankProfitSummary(flat);
+  setText("keuanganSaldoBank", formatRp(bank.saldo));
+  setText(
+    "keuanganSaldoBankNote",
+    `Laba ${formatRp(bank.totalLaba)} − ditarik ${formatRp(bank.totalTarik)}`,
+  );
+  setText("bankLabaTotal", formatRp(bank.totalLaba));
+  setText("bankTarikTotal", formatRp(bank.totalTarik));
+  setText("bankSaldoTersedia", formatRp(bank.saldo));
+  document
+    .getElementById("bankSaldoTersedia")
+    ?.classList.toggle("profit-neg", bank.saldo < 0);
+  document
+    .getElementById("keuanganSaldoBank")
+    ?.classList.toggle("profit-neg", bank.saldo < 0);
 
-  document.getElementById(
-    "keuanganTxList",
-  ).innerHTML =
-    flat
-      .slice(0, 8)
-      .map(txRowHtml)
-      .join("") ||
-    '<p class="empty-note">Belum ada transaksi.</p>';
+  const bankDateEl = document.getElementById("bankTarikDate");
+  if (bankDateEl && !bankDateEl.value) bankDateEl.value = isoDate(new Date());
+
+  renderPaged({
+    id: "tableBankTarik",
+    rows: bankWithdrawalList(),
+    rowHtml: bankWithdrawalRowHtml,
+    empty: `<tr class="loading-row"><td colspan="4">Belum ada penarikan dana bank sampah.</td></tr>`,
+  });
+
+  renderPaged({
+    id: "keuanganTxList",
+    rows: flat,
+    rowHtml: txRowHtml,
+    empty: '<p class="empty-note">Belum ada transaksi.</p>',
+  });
 }
+
+async function refreshKeuangan() {
+  await loadDashboard();
+  renderKeuangan(cache.users, cache.flat);
+}
+
+function initBankTarikForm() {
+  const dateEl = document.getElementById("bankTarikDate");
+  const nominalEl = document.getElementById("bankTarikNominal");
+  const noteEl = document.getElementById("bankTarikNote");
+  const errEl = document.getElementById("bankTarikError");
+  const btn = document.getElementById("btnTarikBank");
+  if (!btn) return;
+
+  const showError = (msg) => {
+    if (errEl) errEl.textContent = msg || "";
+  };
+
+  document.getElementById("btnTarikBankSemua")?.addEventListener("click", () => {
+    const { saldo } = bankProfitSummary();
+    if (nominalEl) nominalEl.value = saldo > 0 ? String(saldo) : "";
+    showError(saldo > 0 ? "" : "Belum ada saldo keuntungan yang bisa ditarik.");
+  });
+
+  btn.addEventListener("click", async () => {
+    showError("");
+
+    const tanggal = dateEl?.value;
+    const nominal = Math.round(Number(nominalEl?.value));
+    const catatan = noteEl?.value.trim() || "";
+    const { saldo } = bankProfitSummary();
+
+    if (!tanggal) return showError("Tanggal penarikan wajib diisi.");
+    if (!Number.isFinite(nominal) || nominal <= 0) {
+      return showError("Isi nominal penarikan lebih dari Rp 0.");
+    }
+    if (nominal > saldo) {
+      return showError(
+        `Nominal melebihi saldo keuntungan bank sampah (${formatRp(Math.max(0, saldo))}).`,
+      );
+    }
+    if (!catatan) return showError("Keperluan penarikan wajib diisi.");
+
+    if (!confirm(`Tarik ${formatRp(nominal)} dari saldo keuntungan bank sampah?`)) return;
+
+    btn.disabled = true;
+    try {
+      const key = push(ref(db, "bank_withdrawals")).key;
+      if (!key) throw new Error("Gagal membuat key penarikan bank sampah.");
+
+      await update(ref(db), {
+        [`bank_withdrawals/${key}`]: {
+          tipe: "Tarik Bank Sampah",
+          tanggal: new Date(`${tanggal}T12:00:00`).toISOString(),
+          nominal_rp: nominal,
+          catatan,
+          admin_pencatat: "Admin Sekolah",
+        },
+      });
+
+      if (nominalEl) nominalEl.value = "";
+      if (noteEl) noteEl.value = "";
+      if (dateEl) dateEl.value = isoDate(new Date());
+      await refreshKeuangan();
+      alert("Penarikan dana bank sampah berhasil dicatat!");
+    } catch (err) {
+      console.error(err);
+      showError(
+        "Gagal menyimpan penarikan. Cek koneksi atau rules Firebase untuk node bank_withdrawals.",
+      );
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("tableBankTarik")?.addEventListener("click", async (e) => {
+    const delBtn = e.target.closest("[data-delete-bank-tarik]");
+    if (!delBtn) return;
+    if (!confirm("Hapus catatan penarikan ini? Saldo keuntungan bank sampah akan bertambah lagi.")) return;
+
+    try {
+      await update(ref(db), {
+        [`bank_withdrawals/${delBtn.dataset.deleteBankTarik}`]: null,
+      });
+      await refreshKeuangan();
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghapus catatan penarikan. Cek koneksi atau rules Firebase.");
+    }
+  });
+}
+
+initBankTarikForm();
 
 // ============================================================================
 // Raport
@@ -2666,9 +2955,13 @@ function renderMonthlyReportPreview() {
     .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
   const wasteOutBodyEl = document.getElementById("monthlyWasteOutBody");
   if (wasteOutBodyEl) {
-    wasteOutBodyEl.innerHTML =
-      wasteOutRows.map(wasteOutHistoryRowHtmlNoActions).join("") ||
-      `<tr class="loading-row"><td colspan="7">Belum ada pengeluaran sampah pada bulan ini.</td></tr>`;
+    renderPaged({
+      id: "monthlyWasteOutBody",
+      rows: wasteOutRows,
+      resetKey: data.label,
+      rowHtml: wasteOutHistoryRowHtmlNoActions,
+      empty: `<tr class="loading-row"><td colspan="7">Belum ada pengeluaran sampah pada bulan ini.</td></tr>`,
+    });
   }
   const wasteOutSummaryEl = document.getElementById("monthlyWasteOutSummary");
   if (wasteOutSummaryEl) {
@@ -2688,10 +2981,11 @@ function renderMonthlyReportPreview() {
   const nasabahBodyEl = document.getElementById("monthlyNasabahBody");
   if (nasabahBodyEl) {
     const { rows: nasabahRows, totals: nt } = getMonthlyNasabahRows(data.tx, cache.users);
-    nasabahBodyEl.innerHTML = nasabahRows.length
-      ? nasabahRows
-          .map(
-            (r) => `<tr>
+    renderPaged({
+      id: "monthlyNasabahBody",
+      rows: nasabahRows,
+      resetKey: data.label,
+      rowHtml: (r) => `<tr>
               <td><strong>${escapeHtml(r.nama)}</strong></td>
               <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
               <td>${formatKg(r.kg)}</td>
@@ -2699,16 +2993,15 @@ function renderMonthlyReportPreview() {
               <td style="font-family:var(--font-mono)">${formatRp(r.tarikRp)}</td>
               <td>${r.tarikCount ? `${r.tarikCount}x` : "-"}</td>
             </tr>`,
-          )
-          .join("") +
-        `<tr style="font-weight:700">
+      footer: `<tr style="font-weight:700">
           <td colspan="2">Total (${nasabahRows.length} nasabah)</td>
           <td>${formatKg(nt.kg)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(nt.setorRp)}</td>
           <td style="font-family:var(--font-mono)">${formatRp(nt.tarikRp)}</td>
           <td>${nt.tarikCount}x</td>
-        </tr>`
-      : `<tr class="loading-row"><td colspan="6">Belum ada setoran atau penarikan nasabah pada bulan ini.</td></tr>`;
+        </tr>`,
+      empty: `<tr class="loading-row"><td colspan="6">Belum ada setoran atau penarikan nasabah pada bulan ini.</td></tr>`,
+    });
     const nasabahSummaryEl = document.getElementById("monthlyNasabahSummary");
     if (nasabahSummaryEl) {
       nasabahSummaryEl.textContent = nasabahRows.length
@@ -3065,7 +3358,7 @@ function getNasabahRecap(users, flat) {
           const kategori = item.kategori || "Lainnya";
           const berat = Number(item.berat_kg) || 0;
           const nilai =
-            berat * (Number(item.harga_per_kg) || hargaKategoriOf(item.kategori));
+            berat * hargaItemOf(item);
           if (!kategoriMap[kategori]) {
             kategoriMap[kategori] = { kategori, kg: 0, rp: 0 };
           }
@@ -3126,14 +3419,10 @@ function renderNasabahRecapTable() {
   if (!body) return;
   const recap = getNasabahRecap(cache.users, cache.flat);
 
-  if (!recap.length) {
-    body.innerHTML = `<tr class="loading-row"><td colspan="7">Belum ada nasabah terdaftar.</td></tr>`;
-    return;
-  }
-
-  body.innerHTML = recap
-    .map(
-      (r, i) => `
+  renderPaged({
+    id: "tableRekapNasabah",
+    rows: recap,
+    rowHtml: (r, i) => `
         <tr class="recap-row" data-recap-toggle="${i}">
           <td>${escapeHtml(r.nama)}</td>
           <td>${escapeHtml(r.kelas)} (${escapeHtml(r.tipe)})</td>
@@ -3152,8 +3441,8 @@ function renderNasabahRecapTable() {
           </td>
         </tr>
       `,
-    )
-    .join("");
+    empty: `<tr class="loading-row"><td colspan="7">Belum ada nasabah terdaftar.</td></tr>`,
+  });
 }
 
 // Toggle buka/tutup baris detail kategori per nasabah (event delegation
@@ -3390,9 +3679,11 @@ function renderKeuntungan() {
       .join("") ||
     `<tr class="loading-row"><td colspan="8">Belum ada penjualan pada periode ini.</td></tr>`;
 
-  document.getElementById("profitTxBody").innerHTML =
-    data.rows
-      .map((tx) => {
+  renderPaged({
+    id: "profitTxBody",
+    rows: data.rows,
+    resetKey: select.value,
+    rowHtml: (tx) => {
         const sum = wasteOutSummary(tx);
         const d = tx.tanggal ? new Date(tx.tanggal) : null;
         const dateStr = d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : "-";
@@ -3405,9 +3696,9 @@ function renderKeuntungan() {
           <td class="${sum.laba < 0 ? "profit-neg" : "profit-pos"}">${formatRp(sum.laba)}</td>
           <td>${formatPct(sum.persen)}</td>
         </tr>`;
-      })
-      .join("") ||
-    `<tr class="loading-row"><td colspan="7">Belum ada penjualan pada periode ini.</td></tr>`;
+    },
+    empty: `<tr class="loading-row"><td colspan="7">Belum ada penjualan pada periode ini.</td></tr>`,
+  });
 
   const noteEl = document.getElementById("profitNote");
   if (noteEl) {
@@ -3721,17 +4012,8 @@ document
 
 document
   .getElementById("nasabahSearch")
-  ?.addEventListener("input", (e) => {
-    const q = e.target.value.trim().toLowerCase();
-
-    document
-      .querySelectorAll("#tableNasabah tr")
-      .forEach((row) => {
-        row.style.display =
-          !q || row.textContent.toLowerCase().includes(q)
-            ? ""
-            : "none";
-      });
+  ?.addEventListener("input", () => {
+    renderNasabahTable(cache.users);
   });
 
 // ============================================================================
@@ -3750,7 +4032,7 @@ const wasteOutTotalEl = document.getElementById("wasteOutTotal");
 // snapshot di riwayat.
 function wasteOutRowHtml(selected = "", berat = "", harga = "") {
   const pilih = selected || cache.kategori[0]?.nama || "";
-  const hargaJual = harga !== "" ? harga : hargaJualKategoriOf(pilih) || "";
+  const hargaJual = harga !== "" ? harga : pilih ? hargaJualKategoriOf(pilih) : "";
   return `<div class="multi-item-row waste-out-row">
     <select class="select-input waste-out-kategori">
       ${cache.kategori.map((k) => `<option value="${escapeHtml(k.nama)}" ${k.nama === pilih ? "selected" : ""}>${escapeHtml(k.nama)} — jual ${formatRp(hargaJualKategoriOf(k.nama))}/kg</option>`).join("")}
@@ -3767,11 +4049,16 @@ function resetWasteOutItems() {
 
 function getCurrentWasteOutItems() {
   return [...document.querySelectorAll(".waste-out-row")]
-    .map((row) => ({
-      kategori: row.querySelector(".waste-out-kategori")?.value || "",
-      berat_kg: parseFloat(row.querySelector(".waste-out-berat")?.value) || 0,
-      harga_jual_per_kg: parseFloat(row.querySelector(".waste-out-harga")?.value) || 0,
-    }))
+    .map((row) => {
+      const hargaRaw = parseFloat(row.querySelector(".waste-out-harga")?.value);
+      return {
+        kategori: row.querySelector(".waste-out-kategori")?.value || "",
+        berat_kg: parseFloat(row.querySelector(".waste-out-berat")?.value) || 0,
+        // 0 itu sah; yang tidak sah hanya kolom kosong atau minus.
+        harga_jual_per_kg: Number.isFinite(hargaRaw) ? hargaRaw : 0,
+        harga_kosong: !Number.isFinite(hargaRaw),
+      };
+    })
     .filter((item) => item.kategori && item.berat_kg > 0);
 }
 
@@ -3835,7 +4122,7 @@ function initWasteOutForm() {
     const select = event.target.closest(".waste-out-kategori");
     if (select) {
       const hargaInput = select.closest(".waste-out-row")?.querySelector(".waste-out-harga");
-      if (hargaInput) hargaInput.value = hargaJualKategoriOf(select.value) || "";
+      if (hargaInput) hargaInput.value = String(hargaJualKategoriOf(select.value));
     }
     kalkulasiWasteOut();
   });
@@ -3877,8 +4164,8 @@ function initWasteOutForm() {
       alert("Pengepul / penerima wajib diisi.");
       return;
     }
-    if (items.some((item) => !(item.harga_jual_per_kg > 0))) {
-      alert("Isi harga jual per kg untuk setiap kategori yang dikeluarkan.");
+    if (items.some((item) => item.harga_kosong || item.harga_jual_per_kg < 0)) {
+      alert("Isi harga jual per kg untuk setiap kategori yang dikeluarkan. Boleh 0, tapi tidak boleh kosong atau minus.");
       return;
     }
 
@@ -3973,11 +4260,6 @@ let currentUID = null;
 let currentNasabahData = null;
 let finalAmount = 0;
 let html5QrcodeScanner = null;
-// Jenis transaksi yang mau langsung dipasang ke form setelah scan QR
-// berhasil ("Setor" atau "Tarik"), dipilih lewat toggle di atas tombol
-// scan. Manual "Cari" tidak kepengaruh preset ini.
-let scanJenisPreset = "Setor";
-
 const inputId =
   document.getElementById(
     "inputId",
@@ -4022,17 +4304,47 @@ const labelInput = document.getElementById("labelInput");
 const inputPinTarik = document.getElementById("inputPinTarik");
 const labelPinTarik = document.getElementById("labelPinTarik");
 const readerEl = document.getElementById("reader");
-const scanToggleButtons = document.querySelectorAll("#scanToggle .scan-toggle-btn");
+// Jenis transaksi: SATU pilihan saja (toggle Setor/Tarik di panel "Detail
+// Transaksi"). Nilainya disimpan di <select id="jenisTx"> yang disembunyikan,
+// jadi semua logika lain (hitung total, simpan, validasi PIN) tetap membaca
+// satu sumber yang sama. Scan QR / cari manual tidak mengubah pilihan ini.
+const jenisToggleButtons = document.querySelectorAll("#jenisToggle .scan-toggle-btn");
+const jenisHintEl = document.getElementById("jenisHint");
+const txtTotalLabel = document.getElementById("txtTotalLabel");
+const btnProsesEl = document.getElementById("btnProses");
 
-scanToggleButtons.forEach((btn) => btn.addEventListener("click", () => {
-  scanJenisPreset = btn.dataset.jenis;
-  scanToggleButtons.forEach((b) => b.classList.toggle("is-active", b === btn));
-}));
+const JENIS_UI = {
+  Setor: {
+    hint: "Nasabah menyetor sampah — saldo bertambah sesuai harga beli tiap kategori.",
+    total: "Total Setoran",
+    submit: "Simpan Setoran",
+  },
+  Tarik: {
+    hint: "Nasabah menarik uang — saldo berkurang dan wajib verifikasi PIN 6 digit.",
+    total: "Total Penarikan",
+    submit: "Simpan Penarikan",
+  },
+};
 
-function applyScanJenisPreset() {
-  jenisTx.value = scanJenisPreset;
-  jenisTx.dispatchEvent(new Event("change"));
+function syncJenisUI() {
+  const jenis = jenisTx.value === "Tarik" ? "Tarik" : "Setor";
+  jenisToggleButtons.forEach((btn) => {
+    const active = btn.dataset.jenis === jenis;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-checked", active ? "true" : "false");
+  });
+  if (jenisHintEl) jenisHintEl.textContent = JENIS_UI[jenis].hint;
+  if (txtTotalLabel) txtTotalLabel.textContent = JENIS_UI[jenis].total;
+  if (btnProsesEl) btnProsesEl.textContent = JENIS_UI[jenis].submit;
 }
+
+jenisToggleButtons.forEach((btn) =>
+  btn.addEventListener("click", () => {
+    if (jenisTx.value === btn.dataset.jenis) return;
+    jenisTx.value = btn.dataset.jenis;
+    jenisTx.dispatchEvent(new Event("change"));
+  }),
+);
 
 // ============================================================================
 // Cari nasabah
@@ -4117,7 +4429,7 @@ document.getElementById("btnScan")?.addEventListener("click", () => {
   html5QrcodeScanner.render(
     (decodedText) => {
       inputId.value = decodedText.trim();
-      cariNasabah(decodedText.trim()).then(() => applyScanJenisPreset());
+      cariNasabah(decodedText.trim());
     },
     (errorMessage) => {
       // Error scan per-frame normal; tidak perlu ditampilkan ke user.
@@ -4179,8 +4491,10 @@ document.getElementById("btnTambahJenisSampah")?.addEventListener("click", () =>
 });
 
 inputJumlah.addEventListener("input", kalkulasi);
+syncJenisUI();
 jenisTx.addEventListener("change", (e) => {
   const isSetor = e.target.value === "Setor";
+  syncJenisUI();
   wrapperSampah.style.display = isSetor ? "block" : "none";
   inputJumlah.style.display = isSetor ? "none" : "block";
   labelInput.style.display = isSetor ? "none" : "block";
@@ -4204,9 +4518,15 @@ document
   .addEventListener(
     "click",
     async () => {
+      const isSetor =
+        jenisTx.value ===
+        "Setor";
+
+      // Setoran boleh bernilai Rp 0 (kategori berharga 0). Penarikan tetap
+      // harus lebih dari 0.
       if (
         !currentUID ||
-        finalAmount <= 0
+        (!isSetor && finalAmount <= 0)
       ) {
         alert(
           "Data tidak valid / nominal 0",
@@ -4214,10 +4534,6 @@ document
 
         return;
       }
-
-      const isSetor =
-        jenisTx.value ===
-        "Setor";
 
       const saldoSekarang =
         currentNasabahData
@@ -4277,6 +4593,12 @@ document
         const items = getCurrentSetorItems();
         if (!items.length) {
           alert("Tambahkan minimal satu kategori dan berat sampah.");
+          return;
+        }
+        if (
+          finalAmount <= 0 &&
+          !confirm("Total setoran Rp 0 karena harga kategori 0. Tetap catat setoran ini?")
+        ) {
           return;
         }
         txnData.items = items;
@@ -4394,9 +4716,13 @@ function renderRiwayatNasabah(uid) {
     .map(([txId, tx]) => ({ ...tx, uid, txId }))
     .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
 
-  tableRiwayatNasabah.innerHTML =
-    rows.map(riwayatNasabahRowHtml).join("") ||
-    `<tr class="loading-row"><td colspan="5">Belum ada transaksi untuk nasabah ini.</td></tr>`;
+  renderPaged({
+    id: "tableRiwayatNasabah",
+    rows,
+    resetKey: uid,
+    rowHtml: riwayatNasabahRowHtml,
+    empty: `<tr class="loading-row"><td colspan="5">Belum ada transaksi untuk nasabah ini.</td></tr>`,
+  });
 
   riwayatNasabahPanel?.classList.remove("hidden");
 }
@@ -4569,12 +4895,13 @@ document.getElementById("btnSimpanEditTx")?.addEventListener("click", async () =
 
   editTxError.textContent = "";
 
-  if (editingFinalAmount <= 0) {
-    editTxError.textContent = "Nominal transaksi tidak boleh 0.";
+  const isSetor = editTxJenis.value === "Setor";
+
+  // Setoran boleh Rp 0 (kategori berharga 0); penarikan tetap harus > 0.
+  if (!isSetor && editingFinalAmount <= 0) {
+    editTxError.textContent = "Nominal penarikan tidak boleh 0.";
     return;
   }
-
-  const isSetor = editTxJenis.value === "Setor";
   let items = [];
 
   if (isSetor) {

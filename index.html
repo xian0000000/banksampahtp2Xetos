@@ -141,13 +141,6 @@
       </button>
     </nav>
 
-    <div class="sidebar-logout">
-      <button type="button" class="btn-logout" id="btnLogout">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-        Logout
-      </button>
-    </div>
-
     <div class="sidebar-footer">
       <div class="footer-card">
         <div class="footer-card-icon">
@@ -157,6 +150,13 @@
           Selamat datang,<br/><strong>Admin Sekolah</strong>
         </div>
       </div>
+    </div>
+
+    <div class="sidebar-logout">
+      <button type="button" class="btn-logout" id="btnLogout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        Logout
+      </button>
     </div>
   </aside>
 
@@ -187,9 +187,9 @@
               <p>Setoran dan penarikan selama 30 hari terakhir.</p>
             </div>
             <div class="resik-chart-tabs" id="dashboardRangeTabs" role="tablist" aria-label="Periode grafik">
-              <button type="button" class="active" data-range="1" role="tab" aria-selected="true">HARIAN</button>
+              <button type="button" data-range="1" role="tab" aria-selected="false">HARIAN</button>
               <button type="button" data-range="7" role="tab" aria-selected="false">7 HARI</button>
-              <button type="button" data-range="30" role="tab" aria-selected="false">30 HARI</button>
+              <button type="button" class="active" data-range="30" role="tab" aria-selected="true">30 HARI</button>
             </div>
           </div>
           <div class="resik-chart-total-row">
@@ -438,17 +438,7 @@
             <button id="btnCari" class="btn btn-secondary">Cari</button>
           </div>
 
-          <p class="field-label" style="margin-top:16px">Atau scan QR nasabah untuk:</p>
-          <div class="scan-toggle" id="scanToggle">
-            <button type="button" class="scan-toggle-btn is-active" data-jenis="Setor">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-              Setor Sampah
-            </button>
-            <button type="button" class="scan-toggle-btn" data-jenis="Tarik">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-              Tarik Saldo
-            </button>
-          </div>
+          <p class="field-label" style="margin-top:16px">Atau scan QR nasabah</p>
           <button id="btnScan" class="btn btn-secondary btn-scan-wide">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3M7 12h10"/></svg>
             Mulai Scan QR
@@ -471,16 +461,27 @@
 
         <div class="panel">
           <p class="field-label">2. Detail Transaksi</p>
-          <div id="formTransaksi" class="hidden">
-            <div class="field-row">
-              <div>
-                <label class="field-label" for="jenisTx">Jenis Transaksi</label>
-                <select id="jenisTx" class="select-input">
-                  <option value="Setor">Setor Sampah</option>
-                  <option value="Tarik">Tarik Saldo</option>
-                </select>
-              </div>
+
+          <div class="jenis-block">
+            <div class="scan-toggle" id="jenisToggle" role="radiogroup" aria-label="Jenis transaksi">
+              <button type="button" class="scan-toggle-btn is-active" data-jenis="Setor" role="radio" aria-checked="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                Setor Sampah
+              </button>
+              <button type="button" class="scan-toggle-btn" data-jenis="Tarik" role="radio" aria-checked="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                Tarik Saldo
+              </button>
             </div>
+            <p class="jenis-hint" id="jenisHint"></p>
+            <!-- Satu-satunya sumber nilai jenis transaksi; diatur lewat toggle di atas -->
+            <select id="jenisTx" class="select-input" hidden aria-hidden="true" tabindex="-1">
+              <option value="Setor">Setor Sampah</option>
+              <option value="Tarik">Tarik Saldo</option>
+            </select>
+          </div>
+
+          <div id="formTransaksi" class="hidden">
 
             <div id="wrapperSampah">
               <div class="section-row">
@@ -498,7 +499,7 @@
             <input type="password" inputmode="numeric" maxlength="6" id="inputPinTarik" class="text-input" placeholder="••••••" style="margin-bottom:14px;display:none;letter-spacing:4px" />
 
             <div class="total-row">
-              <span class="stat-label" style="margin:0">Total Transaksi</span>
+              <span class="stat-label" style="margin:0" id="txtTotalLabel">Total Setoran</span>
               <span class="amount" id="txtTotal">Rp 0</span>
             </div>
 
@@ -644,17 +645,28 @@
       <div class="main-header">
         <div>
           <div class="main-title">Keuangan</div>
-          <div class="main-subtitle">Ringkasan saldo bank sampah</div>
+          <div class="main-subtitle">Saldo nasabah dan saldo keuntungan bank sampah</div>
         </div>
       </div>
-      <div class="summary-grid">
+      <div class="summary-grid summary-grid--4">
         <div class="stat-card">
           <div class="stat-icon is-primary">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg>
           </div>
           <div>
-            <p class="stat-label">Total Saldo Aktif</p>
+            <p class="stat-label">Saldo Nasabah Aktif</p>
             <p class="stat-value" id="keuanganSaldoAktif">–</p>
+            <p class="stat-sub" id="keuanganSaldoAktifNote">Uang nasabah yang tersimpan</p>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon is-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 010 3h-3a1.5 1.5 0 000 3h4"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Saldo Keuntungan Bank Sampah</p>
+            <p class="stat-value" id="keuanganSaldoBank">–</p>
+            <p class="stat-sub" id="keuanganSaldoBankNote">Laba jual sampah − dana ditarik</p>
           </div>
         </div>
         <div class="stat-card">
@@ -671,11 +683,53 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
           </div>
           <div>
-            <p class="stat-label">Total Tarik (30 hari)</p>
+            <p class="stat-label">Total Tarik Nasabah (30 hari)</p>
             <p class="stat-value" id="keuanganKeluar">–</p>
           </div>
         </div>
       </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head">
+          <span class="panel-title">Tarik Dana Bank Sampah</span>
+          <span class="stat-label" style="margin:0">Mengambil uang dari keuntungan jual sampah. Tidak mengurangi saldo nasabah.</span>
+        </div>
+        <div class="report-stats">
+          <div class="report-stat"><span>Total keuntungan (jual ke lapak)</span><strong id="bankLabaTotal">–</strong></div>
+          <div class="report-stat"><span>Sudah ditarik</span><strong id="bankTarikTotal">–</strong></div>
+          <div class="report-stat report-stat--profit"><span>Saldo tersedia</span><strong id="bankSaldoTersedia">–</strong></div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label class="field-label" for="bankTarikDate">Tanggal</label>
+            <input type="date" id="bankTarikDate" class="text-input" />
+          </div>
+          <div>
+            <div class="section-row">
+              <label class="field-label" for="bankTarikNominal" style="margin:0">Nominal (Rp)</label>
+              <button type="button" id="btnTarikBankSemua" class="link-btn">Tarik semua</button>
+            </div>
+            <input type="number" id="bankTarikNominal" class="text-input" min="1" step="1" placeholder="Contoh: 50000" />
+          </div>
+        </div>
+        <label class="field-label" for="bankTarikNote" style="margin-top:14px">Keperluan</label>
+        <input type="text" id="bankTarikNote" class="text-input" placeholder="Contoh: Beli timbangan baru / kas kegiatan sekolah" />
+        <p class="empty-note" id="bankTarikError" style="color:var(--color-red)"></p>
+        <button id="btnTarikBank" class="btn btn-primary" style="margin-top:6px">Tarik Dana</button>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-head"><span class="panel-title">Riwayat Penarikan Bank Sampah</span></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr><th>Tanggal</th><th>Nominal</th><th>Keperluan</th><th></th></tr>
+            </thead>
+            <tbody id="tableBankTarik"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head"><span class="panel-title">Transaksi Terbaru</span></div>
         <div class="tx-list" id="keuanganTxList"></div>
