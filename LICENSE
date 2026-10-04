@@ -1,0 +1,59 @@
+LISENSI PROPRIETER TIM ETOS CIPTA TEKNOLOGI
+Hak Cipta (c) 2026 Tim ETOS CIPTA TEKNOLOGI. Seluruh hak dilindungi.
+
+Proyek "Resik For Schooling", mencakup kode sumber, desain, logo, ilustrasi,
+dokumentasi, dan seluruh file di repositori ini ("Karya"), adalah milik
+Tim ETOS CIPTA TEKNOLOGI. Karya ini BUKAN open source.
+
+1. IZIN
+   Tidak ada izin yang diberikan kepada pihak mana pun untuk menggunakan,
+   menyalin, mengubah, menggabungkan, menjalankan, menerbitkan,
+   mendistribusikan, mensublisensikan, atau menjual Karya ini, seluruhnya
+   maupun sebagian, tanpa izin tertulis dari Tim ETOS CIPTA TEKNOLOGI.
+
+2. YANG DILARANG tanpa izin tertulis
+   a. Menyalin atau mem-fork kode untuk dipakai atau dikembangkan di luar Tim ETOS CIPTA TEKNOLOGI.
+   b. Memakai nama, logo, dan identitas visual "Resik For Schooling", "RESIK",
+      atau "ETOS Envird Tech".
+   c. Menjalankan Karya ini sebagai layanan atau aplikasi untuk pihak lain.
+   d. Menjual, menyewakan, atau memperdagangkan Karya atau turunannya.
+   e. Melatih atau menyempurnakan model AI dengan Karya ini.
+
+3. YANG DIPERBOLEHKAN
+   Hanya melihat kode di repositori ini untuk dibaca. Pengecualian: hak yang
+   diberikan oleh Ketentuan Layanan GitHub kepada pengguna GitHub lain (misalnya
+   melihat dan mem-fork di dalam GitHub) tetap berlaku, tetapi tidak memberi hak
+   lain di luar yang tertulis di sini.
+
+4. PIHAK KETIGA
+   Pustaka, font, dan layanan pihak ketiga yang dipakai Karya ini tetap
+   tunduk pada lisensinya masing-masing (lihat THIRD_PARTY_NOTICES.md).
+   Lisensi ini tidak mengubah atau mencabut lisensi tersebut.
+
+5. IZIN KHUSUS
+   Untuk meminta izin (sekolah, kolaborasi, dan sebagainya), hubungi:
+   (isi alamat email Tim ETOS CIPTA TEKNOLOGI)
+
+6. TANPA JAMINAN
+   KARYA INI DISEDIAKAN "APA ADANYA", TANPA JAMINAN APA PUN, TERSURAT MAUPUN
+   TERSIRAT, TERMASUK KELAYAKAN DIPERDAGANGKAN, KESESUAIAN UNTUK TUJUAN
+   TERTENTU, DAN BEBAS PELANGGARAN. TIM ETOS CIPTA TEKNOLOGI TIDAK BERTANGGUNG JAWAB ATAS
+   KLAIM, KERUGIAN, ATAU KEWAJIBAN APA PUN YANG TIMBUL DARI PENGGUNAAN KARYA.
+
+7. PELANGGARAN
+   Penggunaan di luar lisensi ini dianggap pelanggaran hak cipta dan dapat
+   ditindak sesuai UU No. 28 Tahun 2014 tentang Hak Cipta.
+
+---------------------------------------------------------------------------
+ENGLISH SUMMARY
+---------------------------------------------------------------------------
+Copyright (c) 2026 ETOS CIPTA TEKNOLOGI Team. All rights reserved.
+
+This is proprietary software, not open source. No permission is granted to
+use, copy, modify, merge, publish, distribute, sublicense, sell, host as a
+service, or use for AI training, in whole or in part, without prior written
+permission from the ETOS CIPTA TEKNOLOGI Team. The names and logos "Resik For Schooling",
+"RESIK" and "ETOS Envird Tech" may not be used. Viewing the source in this
+repository is allowed, and rights granted to GitHub users by the GitHub Terms
+of Service are unaffected. Third-party components remain under their own
+licenses. The Work is provided "AS IS" without warranty of any kind.
