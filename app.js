@@ -3,18 +3,12 @@
 // Firebase Realtime Database (REST via modular SDK) + rendering logic
 // ============================================================================
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
 
+import { ref, child, push } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
 import {
-  getDatabase,
-  ref,
-  get,
-  child,
-  update,
-  push,
-  set,
-  remove,
-} from "https://www.gstatic.com/firebasejs/10.4.0/firebase-database.js";
+  app1 as app, db1 as db, auth1 as auth,
+  dualGet, dualUpdate, dualSet, dualRemove, signInSecondary, signOutSecondary,
+} from "./db-dual.js";
 
 import {
   getAuth,
@@ -24,20 +18,6 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBRuCNCG24CAwdOJNPSTKXvtRWRL1qIPL8",
-  authDomain: "banksampahtp2xetos.firebaseapp.com",
-  databaseURL:
-    "https://banksampahtp2xetos-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "banksampahtp2xetos",
-  storageBucket: "banksampahtp2xetos.firebasestorage.app",
-  messagingSenderId: "306920049631",
-  appId: "1:306920049631:web:2f8e35b8051a8f6b01d26a",
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const auth = getAuth(app);
 
 // Data grafik dashboard disimpan supaya tab Harian / 7 Hari / 30 Hari
 // bisa berganti tanpa request Firebase ulang.
@@ -77,7 +57,7 @@ function setAuthNote(msg) {
 
 async function isEmailAllowedAsAdmin(email) {
   const key = sanitizeEmailKey(email);
-  const snap = await get(child(ref(db), `admin_emails/${key}`));
+  const snap = await dualGet(`admin_emails/${key}`);
   return snap.exists() && snap.val() === true;
 }
 
@@ -89,7 +69,8 @@ authGoogleBtn.addEventListener("click", async () => {
     // Selalu tampilkan pilihan akun, supaya setelah logout admin bisa
     // masuk dengan akun Google yang berbeda.
     provider.setCustomParameters({ prompt: "select_account" });
-    await signInWithPopup(auth, provider);
+    const popupResult = await signInWithPopup(auth, provider);
+    await signInSecondary(popupResult);
     // Hasilnya ditangani di onAuthStateChanged di bawah.
   } catch (err) {
     console.error(err);
@@ -108,6 +89,7 @@ document.getElementById("btnLogout")?.addEventListener("click", async () => {
   if (btn) btn.disabled = true;
   try {
     await signOut(auth);
+    await signOutSecondary();
     // Muat ulang supaya semua data & state admin (cache, form, tab aktif)
     // bersih. Layar login ditampilkan oleh onAuthStateChanged.
     window.location.reload();
@@ -133,6 +115,7 @@ onAuthStateChanged(auth, async (user) => {
   const allowed = await isEmailAllowedAsAdmin(user.email || "");
   if (!allowed) {
     await signOut(auth);
+    await signOutSecondary();
     showAuthScreen();
     authCheckingBox.classList.add("hidden");
     authGoogleBtn.classList.remove("hidden");
@@ -491,7 +474,7 @@ document.addEventListener("click", (e) => {
 
 async function fetchAllUsers() {
   try {
-    const snap = await get(child(ref(db), "users"));
+    const snap = await dualGet("users");
     return snap.exists() ? snap.val() : {};
   } catch (err) {
     console.error("Gagal membaca node 'users':", err);
@@ -501,7 +484,7 @@ async function fetchAllUsers() {
 
 async function fetchAllTransactions() {
   try {
-    const snap = await get(child(ref(db), "transactions"));
+    const snap = await dualGet("transactions");
     return snap.exists() ? snap.val() : {};
   } catch (err) {
     console.error("Gagal membaca node 'transactions':", err);
@@ -511,7 +494,7 @@ async function fetchAllTransactions() {
 
 async function fetchAllWasteOut() {
   try {
-    const snap = await get(child(ref(db), "waste_out"));
+    const snap = await dualGet("waste_out");
     return snap.exists() ? snap.val() : {};
   } catch (err) {
     // Node waste_out bisa belum punya permission di Firebase Rules.
@@ -523,7 +506,7 @@ async function fetchAllWasteOut() {
 
 async function fetchBankWithdrawals() {
   try {
-    const snap = await get(child(ref(db), "bank_withdrawals"));
+    const snap = await dualGet("bank_withdrawals");
     return snap.exists() ? snap.val() : {};
   } catch (err) {
     // Node bank_withdrawals bisa belum punya permission di Firebase Rules.
@@ -534,7 +517,7 @@ async function fetchBankWithdrawals() {
 
 async function fetchKategori() {
   try {
-    const snap = await get(child(ref(db), "kategori"));
+    const snap = await dualGet("kategori");
 
     if (!snap.exists()) {
       const seeded = {};
@@ -548,9 +531,7 @@ async function fetchKategori() {
       });
 
       try {
-        await update(
-          ref(db),
-          Object.fromEntries(
+        await dualUpdate(Object.fromEntries(
             Object.entries(seeded).map(([key, val]) => [
               `kategori/${key}`,
               val,
@@ -1007,7 +988,7 @@ let cache = {
 
 async function fetchPengumuman() {
   try {
-    const snap = await get(child(ref(db), "pengumuman"));
+    const snap = await dualGet("pengumuman");
     if (!snap.exists()) return [];
     return Object.entries(snap.val())
       .map(([key, val]) => ({ key, ...val }))
@@ -1404,7 +1385,7 @@ async function resetPinNasabah(uid) {
   );
   if (!confirmReset) return;
   try {
-    await update(ref(db), { [`users/${uid}/pin`]: null });
+    await dualUpdate({ [`users/${uid}/pin`]: null });
     if (cache.users[uid]) delete cache.users[uid].pin;
     if (currentUID === uid && currentNasabahData) {
       delete currentNasabahData.pin;
@@ -1523,9 +1504,7 @@ document
       // akun Google cuma boleh nge-link ke satu kartu nasabah).
       if (email) {
         const emailKey = sanitizeEmailKey(email);
-        const existing = await get(
-          child(ref(db), `email_to_uid/${emailKey}`),
-        );
+        const existing = await dualGet(`email_to_uid/${emailKey}`);
         if (existing.exists()) {
           errorEl.textContent =
             "Email ini sudah dipakai nasabah lain.";
@@ -1564,7 +1543,7 @@ document
         updates[`email_to_uid/${sanitizeEmailKey(email)}`] = newUid;
       }
 
-      await update(ref(db), updates);
+      await dualUpdate(updates);
 
       // Tampilkan QR
 
@@ -1658,7 +1637,7 @@ document.getElementById("tableNasabah")?.addEventListener("click", async (e) => 
     if (!nama.trim()) { alert("Nama wajib diisi."); return; }
     const cleanEmail = email.trim().toLowerCase();
     if (cleanEmail && cleanEmail !== (user.email || "").toLowerCase()) {
-      const exists = await get(child(ref(db), `email_to_uid/${sanitizeEmailKey(cleanEmail)}`));
+      const exists = await dualGet(`email_to_uid/${sanitizeEmailKey(cleanEmail)}`);
       if (exists.exists() && exists.val() !== uid) { alert("Email sudah dipakai nasabah lain."); return; }
     }
     const updates = {};
@@ -1671,7 +1650,7 @@ document.getElementById("tableNasabah")?.addEventListener("click", async (e) => 
     }
     if (cleanEmail) updates[`email_to_uid/${sanitizeEmailKey(cleanEmail)}`] = uid;
     try {
-      await update(ref(db), updates);
+      await dualUpdate(updates);
       await loadDashboard();
       renderNasabahTable(cache.users);
     } catch (err) { console.error(err); alert("Gagal mengedit nasabah."); }
@@ -1683,7 +1662,7 @@ document.getElementById("tableNasabah")?.addEventListener("click", async (e) => 
     const updates = { [`users/${uid}`]: null, [`transactions/${uid}`]: null };
     if (user.email) updates[`email_to_uid/${sanitizeEmailKey(user.email)}`] = null;
     try {
-      await update(ref(db), updates);
+      await dualUpdate(updates);
       await loadDashboard();
       renderNasabahTable(cache.users);
       document.getElementById("nasabahResultCard")?.classList.add("hidden");
@@ -1751,7 +1730,7 @@ async function kirimPengumuman(judul, isi) {
   const newKey = push(ref(db, "pengumuman")).key;
   if (!newKey) throw new Error("Gagal membuat key pengumuman.");
 
-  await set(ref(db, `pengumuman/${newKey}`), {
+  await dualSet(`pengumuman/${newKey}`, {
     judul,
     isi,
     created_at: Date.now(),
@@ -1759,7 +1738,7 @@ async function kirimPengumuman(judul, isi) {
 }
 
 async function hapusPengumuman(key) {
-  await remove(ref(db, `pengumuman/${key}`));
+  await dualRemove(`pengumuman/${key}`);
 }
 
 document
@@ -1887,8 +1866,7 @@ async function tambahKategori(
     );
   }
 
-  await set(
-    ref(db, `kategori/${newKey}`),
+  await dualSet(`kategori/${newKey}`,
     {
       nama,
       harga,
@@ -1923,11 +1901,11 @@ async function simpanKategori(key, nama, harga, hargaJual) {
       });
   }
 
-  await update(ref(db), updates);
+  await dualUpdate(updates);
 }
 
 async function hapusKategori(key) {
-  await remove(ref(db, `kategori/${key}`));
+  await dualRemove(`kategori/${key}`);
 }
 
 document
@@ -2336,7 +2314,7 @@ document.getElementById("tableWasteOutHistory")?.addEventListener("click", async
   if (!confirm("Hapus catatan pengeluaran sampah ini? Stok akan kembali seperti sebelum dikeluarkan.")) return;
 
   try {
-    await update(ref(db), { [`waste_out/${txId}`]: null });
+    await dualUpdate({ [`waste_out/${txId}`]: null });
     await loadDashboard();
     renderStokTable(cache.flat);
     renderWasteOutHistory(cache.flat);
@@ -2651,7 +2629,7 @@ function initBankTarikForm() {
       const key = push(ref(db, "bank_withdrawals")).key;
       if (!key) throw new Error("Gagal membuat key penarikan bank sampah.");
 
-      await update(ref(db), {
+      await dualUpdate({
         [`bank_withdrawals/${key}`]: {
           tipe: "Tarik Bank Sampah",
           tanggal: new Date(`${tanggal}T12:00:00`).toISOString(),
@@ -2682,7 +2660,7 @@ function initBankTarikForm() {
     if (!confirm("Hapus catatan penarikan ini? Saldo keuntungan bank sampah akan bertambah lagi.")) return;
 
     try {
-      await update(ref(db), {
+      await dualUpdate({
         [`bank_withdrawals/${delBtn.dataset.deleteBankTarik}`]: null,
       });
       await refreshKeuangan();
@@ -4230,7 +4208,7 @@ function initWasteOutForm() {
         admin_pencatat: "Admin Sekolah",
       };
 
-      await update(ref(db), { [`waste_out/${key}`]: txn });
+      await dualUpdate({ [`waste_out/${key}`]: txn });
 
       alert("Pengeluaran sampah berhasil dicatat!");
       if (wasteOutReceiverEl) wasteOutReceiverEl.value = "";
@@ -4352,7 +4330,7 @@ jenisToggleButtons.forEach((btn) =>
 
 async function cariNasabah(uid) {
   try {
-    const snapshot = await get(child(ref(db), `users/${uid}`));
+    const snapshot = await dualGet(`users/${uid}`);
     if (!snapshot.exists()) {
       alert("Nasabah tidak ditemukan!");
       return;
@@ -4384,7 +4362,7 @@ async function cariNasabah(uid) {
     // saldo yang ditampilkan selalu terbaru setelah tambah/edit/hapus.
     if (cache.users) cache.users[uid] = currentNasabahData;
     if (!cache.transactions) cache.transactions = {};
-    const txSnap = await get(child(ref(db), `transactions/${uid}`));
+    const txSnap = await dualGet(`transactions/${uid}`);
     cache.transactions[uid] = txSnap.exists() ? txSnap.val() : {};
     renderRiwayatNasabah(uid);
   } catch (err) {
@@ -4632,9 +4610,7 @@ document
           `transactions/${currentUID}/${newTxnKey}`
         ] = txnData;
 
-        await update(
-          ref(db),
-          updates,
+        await dualUpdate(updates,
         );
 
         alert(
@@ -4750,7 +4726,7 @@ async function hapusTransaksiNasabah(uid, txId) {
     updates[`users/${uid}/saldo_terakhir`] = saldoBaru;
     updates[`transactions/${uid}/${txId}`] = null;
 
-    await update(ref(db), updates);
+    await dualUpdate(updates);
 
     if (currentUID === uid) await cariNasabah(uid);
     await loadDashboard();
@@ -4945,7 +4921,7 @@ document.getElementById("btnSimpanEditTx")?.addEventListener("click", async () =
     updates[`users/${editingUID}/saldo_terakhir`] = saldoBaru;
     updates[`transactions/${editingUID}/${editingTxId}`] = newTxnData;
 
-    await update(ref(db), updates);
+    await dualUpdate(updates);
 
     closeEditTxModal();
 

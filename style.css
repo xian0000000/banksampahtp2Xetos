@@ -2764,3 +2764,34 @@ body{background:var(--ui-bg)!important;color:var(--ui-ink)!important;font-family
   line-height: 1.5;
 }
 .jenis-block select[hidden] { display: none !important; }
+
+
+/* Panel sinkronisasi server (S1 / S2) di sidebar, di atas tombol Logout */
+.sync-panel {
+  margin: 12px 2px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border, #e5ebe7);
+  border-radius: 14px;
+  background: #f8faf8;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.sync-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sync-title { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: #6b7a72; text-transform: uppercase; }
+.sync-btn {
+  width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--ui-border, #e5ebe7); border-radius: 8px;
+  background: #fff; color: #4b5a52; cursor: pointer; transition: background .15s;
+}
+.sync-btn:hover { background: #eef4f0; }
+.sync-btn svg { width: 13px; height: 13px; }
+.sync-btn.is-busy svg { animation: sync-spin .9s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+.sync-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: #1f2a24; }
+.sync-name { font-weight: 600; }
+.sync-state { margin-left: auto; font-size: 11px; color: #6b7a72; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #b9c3bd; flex-shrink: 0; }
+.sync-row.is-ok .sync-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+.sync-row.is-bad .sync-dot { background: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,.15); }
+.sync-row.is-bad .sync-state { color: #c0392b; }
+.sync-row.is-off { opacity: .55; }
