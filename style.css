@@ -2798,3 +2798,6 @@ body{background:var(--ui-bg)!important;color:var(--ui-ink)!important;font-family
 
 .kategori-save-bar { display:flex; justify-content:flex-end; padding:14px 4px 4px; }
 .kategori-save-bar .btn:disabled { opacity:.5; cursor:not-allowed; }
+
+.tx-action-row { display:flex; gap:10px; }
+.tx-action-row .btn-primary { flex:1; width:auto; }

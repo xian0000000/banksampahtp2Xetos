@@ -4439,8 +4439,16 @@ function resetNasabahTerpilih() {
   divForm.classList.add("hidden");
   txEmptyNote.classList.remove("hidden");
   document.getElementById("riwayatNasabahPanel")?.classList.add("hidden");
+  if (html5QrcodeScanner) {
+    try { html5QrcodeScanner.clear(); } catch (_) {}
+    html5QrcodeScanner = null;
+    readerEl?.classList.add("is-hidden");
+  }
   inputId.focus();
 }
+
+// Tombol Batal: kosongkan nasabah & isian tanpa mencatat transaksi.
+document.getElementById("btnBatalTransaksi")?.addEventListener("click", resetNasabahTerpilih);
 
 document.getElementById("btnCari")?.addEventListener("click", () => {
   const uid = inputId.value.trim();
