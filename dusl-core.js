@@ -153,8 +153,13 @@ export function createDualStore({
       });
       persist();
       emit();
+      const detail = backends
+        .map((b, i) => `${b.name}: ${state[i].lastError || "tidak ada respons"}`)
+        .join(" | ");
       throw new Error(
-        "Semua server tidak merespons. Data TIDAK tersimpan, coba lagi.",
+        "Semua server tidak merespons. Data TIDAK tersimpan, coba lagi. [" +
+          detail +
+          "]",
       );
     }
     return applied; // mis. [true,false] = server 2 tertinggal (masuk antrian)
