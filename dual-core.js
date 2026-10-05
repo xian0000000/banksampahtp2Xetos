@@ -110,6 +110,10 @@ export function createDualStore({
   function flush(i) {
     if (flushing[i]) return flushing[i];
     flushing[i] = (async () => {
+      // Wajib yield dulu: kalau antrian kosong, tanpa ini seluruh fungsi (termasuk
+      // `finally`) selesai sinkron SEBELUM `flushing[i]` di-assign, sehingga
+      // flushing[i] nyangkut ke promise lama dan flush berikutnya tidak pernah jalan.
+      await null;
       try {
         while (queues[i].length) {
           const op = queues[i][0];
