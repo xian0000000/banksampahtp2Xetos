@@ -4421,6 +4421,27 @@ async function cariNasabah(uid) {
   }
 }
 
+// Kosongkan nasabah yang sedang dipilih supaya form siap untuk transaksi
+// berikutnya (dipanggil setelah transaksi berhasil dicatat).
+function resetNasabahTerpilih() {
+  currentUID = null;
+  currentNasabahData = null;
+  inputId.value = "";
+  txtNama.textContent = "-";
+  txtSaldo.textContent = formatRp(0);
+  const txtPinEl = document.getElementById("txtPin");
+  if (txtPinEl) txtPinEl.textContent = "-";
+  inputJumlah.value = "";
+  if (inputPinTarik) inputPinTarik.value = "";
+  resetSetorItems();
+  kalkulasi();
+  divProfil.classList.add("is-hidden");
+  divForm.classList.add("hidden");
+  txEmptyNote.classList.remove("hidden");
+  document.getElementById("riwayatNasabahPanel")?.classList.add("hidden");
+  inputId.focus();
+}
+
 document.getElementById("btnCari")?.addEventListener("click", () => {
   const uid = inputId.value.trim();
   if (uid) cariNasabah(uid);
@@ -4667,16 +4688,15 @@ document
           "Transaksi berhasil dicatat!",
         );
 
-        inputJumlah.value = "";
-        if (inputPinTarik) inputPinTarik.value = "";
-        resetSetorItems();
-        kalkulasi();
+        // Transaksi sudah masuk: kosongkan form supaya siap untuk nasabah
+        // berikutnya (jangan muat ulang nasabah yang sama).
+        resetNasabahTerpilih();
 
-        await cariNasabah(
-          currentUID,
-        );
-
-        await loadDashboard();
+        try {
+          await loadDashboard();
+        } catch (err) {
+          console.warn("Transaksi tersimpan, tapi gagal memuat ulang dashboard:", err);
+        }
       } catch (err) {
         console.error(err);
 
