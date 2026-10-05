@@ -1825,10 +1825,7 @@ function renderKategoriTable(flat) {
               <input type="number" min="0" class="kategori-harga-input" data-key="${k.key}" value="${k.harga}" />
             </td>
             <td>
-              <div class="price-edit-row">
-                <input type="number" min="0" class="kategori-harga-jual-input" data-key="${k.key}" value="${hargaJualKategoriOf(k.nama)}" />
-                <button class="link-btn" data-save-kategori="${k.key}">Simpan</button>
-              </div>
+              <input type="number" min="0" class="kategori-harga-jual-input" data-key="${k.key}" value="${hargaJualKategoriOf(k.nama)}" />
             </td>
 
             <td>
@@ -1850,6 +1847,7 @@ function renderKategoriTable(flat) {
         </td>
       </tr>
     `;
+  updateKategoriDirty();
 }
 
 async function tambahKategori(
@@ -1875,33 +1873,89 @@ async function tambahKategori(
   );
 }
 
-async function simpanKategori(key, nama, harga, hargaJual) {
-  const old = cache.kategori.find((k) => k.key === key);
-  const updates = {
-    [`kategori/${key}/nama`]: nama,
-    [`kategori/${key}/harga`]: harga,
-    [`kategori/${key}/harga_jual`]: hargaJual,
-  };
+// Simpan banyak kategori sekaligus dalam SATU operasi tulis.
+// perubahan: [{ key, namaLama, nama, harga, hargaJual }]
+async function simpanSemuaKategori(perubahan) {
+  const updates = {};
+  const rename = new Map(); // namaLama -> namaBaru
+
+  perubahan.forEach(({ key, namaLama, nama, harga, hargaJual }) => {
+    updates[`kategori/${key}/nama`] = nama;
+    updates[`kategori/${key}/harga`] = harga;
+    updates[`kategori/${key}/harga_jual`] = hargaJual;
+    if (namaLama !== nama) rename.set(namaLama, nama);
+  });
 
   // Saat nama kategori diubah, ikut migrasikan nama kategori pada transaksi
   // lama supaya riwayat dan analitik tetap nyambung ke kategori yang sama.
-  if (old && old.nama !== nama) {
+  if (rename.size) {
     cache.flat
       .filter((tx) => tx.tipe === "Setor")
       .forEach((tx) => {
         if (Array.isArray(tx.items)) {
           tx.items.forEach((item, index) => {
-            if (item.kategori === old.nama) {
-              updates[`transactions/${tx.uid}/${tx.txId}/items/${index}/kategori`] = nama;
+            if (rename.has(item.kategori)) {
+              updates[`transactions/${tx.uid}/${tx.txId}/items/${index}/kategori`] = rename.get(item.kategori);
             }
           });
-        } else if (tx.kategori === old.nama) {
-          updates[`transactions/${tx.uid}/${tx.txId}/kategori`] = nama;
+        } else if (rename.has(tx.kategori)) {
+          updates[`transactions/${tx.uid}/${tx.txId}/kategori`] = rename.get(tx.kategori);
         }
       });
   }
 
   await dualUpdate(updates);
+}
+
+// Baca semua baris tabel, bandingkan dengan data asli, ambil yang berubah saja.
+function bacaPerubahanKategori() {
+  const perubahan = [];
+  const namaAkhir = [];
+  let error = null;
+
+  cache.kategori.forEach((k) => {
+    const q = (cls) => document.querySelector(`.${cls}[data-key="${k.key}"]`);
+    const namaEl = q("kategori-nama-input");
+    if (!namaEl) { namaAkhir.push({ key: k.key, nama: k.nama }); return; }
+
+    const nama = namaEl.value.trim();
+    const harga = parseFloat(q("kategori-harga-input")?.value);
+    const hargaJual = parseFloat(q("kategori-harga-jual-input")?.value);
+    namaAkhir.push({ key: k.key, nama });
+
+    const berubah =
+      nama !== k.nama ||
+      harga !== Number(k.harga) ||
+      hargaJual !== hargaJualKategoriOf(k.nama);
+    if (!berubah) return;
+
+    if (!error && !nama) error = "Nama kategori tidak boleh kosong.";
+    if (!error && (!Number.isFinite(harga) || harga < 0 || !Number.isFinite(hargaJual) || hargaJual < 0)) {
+      error = `Harga beli dan harga jual "${nama || k.nama}" harus diisi. Boleh 0, tapi tidak boleh kosong atau minus.`;
+    }
+    perubahan.push({ key: k.key, namaLama: k.nama, nama, harga, hargaJual });
+  });
+
+  if (!error) {
+    const seen = new Set();
+    for (const { nama } of namaAkhir) {
+      const low = nama.toLowerCase();
+      if (seen.has(low)) { error = `Nama kategori "${nama}" dipakai lebih dari sekali.`; break; }
+      seen.add(low);
+    }
+  }
+  return { perubahan, error };
+}
+
+// Aktif/nonaktifkan tombol "Simpan semua" sesuai jumlah perubahan.
+function updateKategoriDirty() {
+  const btn = document.getElementById("btnSimpanSemuaKategori");
+  if (!btn || !cache?.kategori) return;
+  const { perubahan } = bacaPerubahanKategori();
+  btn.disabled = perubahan.length === 0;
+  btn.textContent = perubahan.length
+    ? `Simpan semua perubahan (${perubahan.length})`
+    : "Simpan semua perubahan";
 }
 
 async function hapusKategori(key) {
@@ -2019,7 +2073,6 @@ document
 document
   .getElementById("tableKategori")
   .addEventListener("click", async (e) => {
-    const saveBtn = e.target.closest("[data-save-kategori]");
     const deleteBtn = e.target.closest("[data-delete-kategori]");
 
     if (deleteBtn) {
@@ -2037,39 +2090,36 @@ document
       }
       return;
     }
-
-    if (!saveBtn) return;
-    const key = saveBtn.dataset.saveKategori;
-    const namaInput = document.querySelector(`.kategori-nama-input[data-key="${key}"]`);
-    const hargaInput = document.querySelector(`.kategori-harga-input[data-key="${key}"]`);
-    const nama = namaInput?.value.trim();
-    const harga = parseFloat(hargaInput?.value);
-    const hargaJualInput = document.querySelector(`.kategori-harga-jual-input[data-key="${key}"]`);
-    const hargaJual = parseFloat(hargaJualInput?.value);
-    if (!nama) {
-      alert("Nama kategori tidak boleh kosong.");
-      return;
-    }
-    if (!Number.isFinite(harga) || harga < 0 || !Number.isFinite(hargaJual) || hargaJual < 0) {
-      alert("Harga beli dan harga jual harus diisi. Boleh 0, tapi tidak boleh kosong atau minus.");
-      return;
-    }
-    const duplicate = cache.kategori.some((k) => k.key !== key && k.nama.toLowerCase() === nama.toLowerCase());
-    if (duplicate) {
-      alert("Nama kategori sudah dipakai.");
-      return;
-    }
-    saveBtn.textContent = "…";
-    try {
-      await simpanKategori(key, nama, harga, hargaJual);
-      await loadDashboard();
-      renderKategoriTable(cache.flat);
-    } catch (err) {
-      console.error(err);
-      alert("Gagal menyimpan kategori. Cek koneksi atau rules Firebase.");
-      saveBtn.textContent = "Simpan";
-    }
   });
+
+// Deteksi edit di tabel -> hitung perubahan di tombol
+document.getElementById("tableKategori").addEventListener("input", updateKategoriDirty);
+
+// Satu tombol untuk menyimpan semua perubahan
+document.getElementById("btnSimpanSemuaKategori").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  const { perubahan, error } = bacaPerubahanKategori();
+  if (error) { alert(error); return; }
+  if (!perubahan.length) return;
+
+  btn.disabled = true;
+  btn.textContent = "Menyimpan…";
+  try {
+    await simpanSemuaKategori(perubahan);
+  } catch (err) {
+    console.error(err);
+    alert("Gagal menyimpan kategori. Cek koneksi atau rules Firebase.");
+    updateKategoriDirty();
+    return;
+  }
+  try {
+    await loadDashboard();
+    renderKategoriTable(cache.flat);
+  } catch (err) {
+    console.error(err);
+    alert("Perubahan sudah tersimpan, tapi gagal memuat ulang tampilan. Coba refresh halaman.");
+  }
+});
 
 // ============================================================================
 // Stok
