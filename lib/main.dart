@@ -27,6 +27,7 @@ import 'pages/transaction_detail_page.dart';
 import 'firebase_options.dart';
 import 'rest/rtdb_rest.dart';
 import 'services/local_notifications.dart';
+import 'services/rtdb_failover.dart';
 import 'services/transaction_notifier.dart';
 import 'utils/app_colors.dart';
 import 'utils/formatters.dart';
@@ -49,11 +50,7 @@ Stream<dynamic> watchRtdb(String path) {
   if (isLinuxDesktop) {
     return RtdbRest.watch(path);
   }
-  return FirebaseDatabase.instance
-      .ref()
-      .child(path)
-      .onValue
-      .map((event) => event.snapshot.value);
+  return RtdbFailover.instance.watch(path);
 }
 
 /// Ubah snapshot mentah node `pengumuman` (Map<key, {judul, isi,
@@ -98,6 +95,69 @@ List<Map<String, dynamic>> parseHargaSampahList(dynamic raw) {
   return entries;
 }
 
+/// StreamBuilder untuk node RTDB yang membuat stream-nya SEKALI per State
+/// (dan hanya dibuat ulang kalau [path] berubah). Memanggil
+/// `watchRtdb(...)` langsung di dalam `build` bikin Stream baru tiap
+/// rebuild, sehingga listener Firebase di-subscribe ulang terus.
+class _RtdbBuilder extends StatefulWidget {
+  const _RtdbBuilder({required this.path, required this.builder});
+
+  final String path;
+  final Widget Function(BuildContext, AsyncSnapshot<dynamic>) builder;
+
+  @override
+  State<_RtdbBuilder> createState() => _RtdbBuilderState();
+}
+
+class _RtdbBuilderState extends State<_RtdbBuilder> {
+  late Stream<dynamic> _stream = watchRtdb(widget.path);
+
+  @override
+  void didUpdateWidget(covariant _RtdbBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      _stream = watchRtdb(widget.path);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      StreamBuilder<dynamic>(stream: _stream, builder: widget.builder);
+}
+
+/// StreamBuilder yang mempertahankan data valid TERAKHIR. Saat stream
+/// subscribe ulang / pindah server / error sesaat / server baru mengirim
+/// null, UI tetap menampilkan data terakhir, bukan mendadak kosong.
+/// (Konsekuensi: kalau node benar-benar dihapus di server, tampilan baru
+/// kosong setelah app dibuka ulang.)
+class _StickyStreamBuilder extends StatefulWidget {
+  const _StickyStreamBuilder({required this.stream, required this.builder});
+
+  final Stream<dynamic> stream;
+  final Widget Function(BuildContext, AsyncSnapshot<dynamic>) builder;
+
+  @override
+  State<_StickyStreamBuilder> createState() => _StickyStreamBuilderState();
+}
+
+class _StickyStreamBuilderState extends State<_StickyStreamBuilder> {
+  dynamic _last;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<dynamic>(
+      stream: widget.stream,
+      builder: (context, snap) {
+        if (snap.data != null) _last = snap.data;
+        final shown = (snap.data == null && _last != null)
+            ? AsyncSnapshot<dynamic>.withData(ConnectionState.active, _last)
+            : snap;
+        return widget.builder(context, shown);
+      },
+    );
+  }
+}
+
 /// Kebalikan dari [watchRtdb]: tulis [value] ke [path]. Dipakai nasabah
 /// buat nyimpen PIN transaksi yang dia atur sendiri (lihat SetupPinPage &
 /// _PinGate) — sebelumnya app ini nggak pernah nulis apa-apa ke database,
@@ -106,7 +166,7 @@ Future<void> writeRtdb(String path, dynamic value) {
   if (isLinuxDesktop) {
     return RtdbRest.put(path, value);
   }
-  return FirebaseDatabase.instance.ref().child(path).set(value);
+  return RtdbFailover.instance.write(path, value);
 }
 
 // formatRupiah() sekarang tinggal di utils/formatters.dart supaya dipakai
@@ -298,8 +358,8 @@ class RiwayatLengkapPage extends StatelessWidget {
       backgroundColor: AppColors.latar,
       appBar: AppBar(title: const Text('Riwayat Transaksi')),
       body: SafeArea(
-        child: StreamBuilder<dynamic>(
-          stream: watchRtdb('transactions/$uid'),
+        child: _RtdbBuilder(
+          path: 'transactions/$uid',
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -421,16 +481,33 @@ Future<void> signOutGoogleAndFirebase() async {
   await ensureGoogleSignInInitialized();
   await _googleSignIn.signOut();
   await FirebaseAuth.instance.signOut();
+  await RtdbFailover.instance.signOutSecondary();
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Di mode release, widget yang error diganti kotak abu-abu polos yang
+  // tingginya tak terbatas kalau ada di dalam list (bikin layar abu-abu
+  // terus waktu di-scroll). Ganti dengan kotak kecil yang menampilkan
+  // pesan errornya, supaya (a) layar tidak rusak total, (b) penyebab
+  // aslinya kelihatan.
+  ErrorWidget.builder = (FlutterErrorDetails details) => Material(
+        color: Colors.red.shade50,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Text(
+            'Terjadi error: ${details.exceptionAsString()}',
+            style: const TextStyle(fontSize: 11, color: Colors.red),
+          ),
+        ),
+      );
   // firebase_core belum ada implementasi native di Linux desktop, jadi
   // di-skip di sana — nasabah dashboard fallback ke REST (lihat lib/rest/).
   if (!isLinuxDesktop) {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    await RtdbFailover.instance.init();
   }
   await LocalNotifications.init();
 
@@ -558,10 +635,8 @@ class _NasabahLookup extends StatelessWidget {
     final email = user.email;
     if (email == null || email.isEmpty) return null;
     final key = sanitizeEmailKey(email);
-    final snap =
-        await FirebaseDatabase.instance.ref('email_to_uid/$key').get();
-    if (!snap.exists) return null;
-    return snap.value as String?;
+    final v = await RtdbFailover.instance.getOnce('email_to_uid/$key');
+    return v as String?;
   }
 
   @override
@@ -610,8 +685,8 @@ class _PinGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<dynamic>(
-      stream: watchRtdb('users/$uid/pin'),
+    return _RtdbBuilder(
+      path: 'users/$uid/pin',
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -735,6 +810,7 @@ class _LoginPageState extends State<LoginPage> {
       final idToken = googleUser.authentication.idToken;
       final credential = GoogleAuthProvider.credential(idToken: idToken);
       await FirebaseAuth.instance.signInWithCredential(credential);
+      RtdbFailover.instance.signInSecondary(credential).ignore();
       // Sisanya ditangani AuthGate/authStateChanges.
     } catch (e) {
       if (mounted) {
@@ -761,6 +837,7 @@ class _LoginPageState extends State<LoginPage> {
         idToken: googleAuth.idToken,
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
+      RtdbFailover.instance.signInSecondary(credential).ignore();
       // Sisanya ditangani AuthGate/authStateChanges.
     } on GoogleSignInException catch (e) {
       if (e.code != GoogleSignInExceptionCode.canceled) {
@@ -1299,8 +1376,8 @@ class PengumumanPage extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
         ),
       ),
-      body: StreamBuilder<dynamic>(
-        stream: watchRtdb('pengumuman'),
+      body: _RtdbBuilder(
+        path: 'pengumuman',
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -1424,6 +1501,22 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
   // Pakai helper top-level watchRtdb() & formatRupiah() (lihat dekat atas
   // file) — sama-sama dipakai juga oleh RiwayatLengkapPage.
   Stream<dynamic> _watch(String path) => watchRtdb(path);
+
+  // Stream dibuat SEKALI per State (bukan di dalam build). Sebelumnya
+  // `_watch(...)` dipanggil di build, jadi tiap rebuild bikin Stream baru
+  // -> semua StreamBuilder unsubscribe + subscribe ulang ke Firebase.
+  late final Stream<dynamic> _userStream = _watch('users/$firebaseUID');
+  late final Stream<dynamic> _pengumumanStream = _watch('pengumuman');
+  late final Stream<dynamic> _kategoriStream = _watch('kategori');
+  late final Stream<dynamic> _riwayatStream =
+      _watch('transactions/$firebaseUID').map((value) {
+    if (value is! Map) return value;
+    final entries = value.entries.toList()
+      ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
+    final last4 =
+        entries.length > 4 ? entries.sublist(entries.length - 4) : entries;
+    return {for (final e in last4) e.key: e.value};
+  });
 
   // Judul pengumuman yang baru saja ditutup (di-dismiss) nasabah, supaya
   // banner yang sama gak langsung muncul lagi selama nasabah masih di
@@ -1591,7 +1684,7 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
           height: kToolbarHeight,
           child: Center(
             child: StreamBuilder<dynamic>(
-              stream: _watch('pengumuman'),
+              stream: _pengumumanStream,
               builder: (context, snapshot) {
                 final count = parsePengumumanList(snapshot.data).length;
                 return Stack(
@@ -1655,7 +1748,7 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
   // ganti (pengumuman baru datang).
   Widget _buildPengumumanBanner() {
     return StreamBuilder<dynamic>(
-      stream: _watch('pengumuman'),
+      stream: _pengumumanStream,
       builder: (context, snapshot) {
         final items = parsePengumumanList(snapshot.data);
         if (items.isEmpty) return const SizedBox.shrink();
@@ -1764,8 +1857,8 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
   // harga di web-admin (menu Kategori), nasabah langsung lihat harga
   // barunya di sini tanpa perlu update aplikasi atau refresh manual.
   Widget _buildHargaSampahSection() {
-    return StreamBuilder<dynamic>(
-      stream: _watch('kategori'),
+    return _StickyStreamBuilder(
+      stream: _kategoriStream,
       builder: (context, snapshot) {
         final items = parseHargaSampahList(snapshot.data);
 
@@ -1842,6 +1935,14 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
                       height: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
+                  ),
+                )
+              else if (snapshot.hasError && items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Gagal memuat harga sampah.\n${snapshot.error}',
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
                   ),
                 )
               else if (items.isEmpty)
@@ -2148,7 +2249,7 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<dynamic>(
-      stream: _watch('users/$firebaseUID'),
+      stream: _userStream,
       builder: (context, snapshot) {
         final bool isLoading =
             snapshot.connectionState == ConnectionState.waiting;
@@ -2264,9 +2365,14 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
     String kelas,
     int currentBalance,
   ) {
-    return ListView(
+    // Cuma 6 child, jadi tidak perlu lazy ListView. Dengan Column biasa,
+    // StreamBuilder di dalamnya tidak pernah di-dispose/dibuat ulang saat
+    // di-scroll (itu pemicu kotak abu-abu sebelumnya).
+    return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
+      child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildPengumumanBanner(),
         GestureDetector(
@@ -2286,20 +2392,13 @@ class _NasabahDashboardState extends State<NasabahDashboard> {
         const SizedBox(height: 10),
         _buildRiwayatTransaksi(namaSiswa, kelas),
       ],
+      ),
     );
   }
 
   Widget _buildRiwayatTransaksi(String namaSiswa, String kelas) {
-    return StreamBuilder<dynamic>(
-      stream: _watch('transactions/$firebaseUID').map((value) {
-        if (value is! Map) return value;
-        final entries = value.entries.toList()
-          ..sort((a, b) => a.key.toString().compareTo(b.key.toString()));
-        final last4 = entries.length > 4
-            ? entries.sublist(entries.length - 4)
-            : entries;
-        return {for (final e in last4) e.key: e.value};
-      }),
+    return _StickyStreamBuilder(
+      stream: _riwayatStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
